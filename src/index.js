@@ -165,27 +165,33 @@ app.whenReady().then(async () => {
     // Initialize core services
     initializeFirebase();
     
-    databaseInitializer.initialize()
-        .then(() => {
-            console.log('>>> [index.js] Database initialized successfully');
-            
-            // Clean up zombie sessions from previous runs first
-            sessionRepository.endAllActiveSessions();
+    try {
+        await databaseInitializer.initialize();
+        console.log('>>> [index.js] Database initialized successfully');
+        
+        // Clean up zombie sessions from previous runs first
+        sessionRepository.endAllActiveSessions();
 
-            authService.initialize();
-            listenService.setupIpcHandlers();
-            askService.initialize();
-            settingsService.initialize();
-            setupGeneralIpcHandlers();
-        })
-        .catch(err => {
-            console.error('>>> [index.js] Database initialization failed - some features may not work', err);
-        });
+        authService.initialize();
+        listenService.setupIpcHandlers();
+        askService.initialize();
+        settingsService.initialize();
+        setupGeneralIpcHandlers();
 
-    WEB_PORT = await startWebStack();
-    console.log('Web front-end listening on', WEB_PORT);
-    
-    createWindows();
+        // Start web server and create windows ONLY after all initializations are successful
+        WEB_PORT = await startWebStack();
+        console.log('Web front-end listening on', WEB_PORT);
+        
+        createWindows();
+
+    } catch (err) {
+        console.error('>>> [index.js] Database initialization failed - some features may not work', err);
+        // Optionally, show an error dialog to the user
+        dialog.showErrorBox(
+            'Application Error',
+            'A critical error occurred during startup. Some features might be disabled. Please restart the application.'
+        );
+    }
 
     initAutoUpdater();
 
