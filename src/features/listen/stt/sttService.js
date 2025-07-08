@@ -74,7 +74,7 @@ class SttService {
     }
 
     flushMyCompletion() {
-        if (!this.myCompletionBuffer.trim()) return;
+        if (!this.modelInfo || !this.myCompletionBuffer.trim()) return;
 
         const finalText = this.myCompletionBuffer.trim();
         
@@ -102,7 +102,7 @@ class SttService {
     }
 
     flushTheirCompletion() {
-        if (!this.theirCompletionBuffer.trim()) return;
+        if (!this.modelInfo || !this.theirCompletionBuffer.trim()) return;
 
         const finalText = this.theirCompletionBuffer.trim();
         
@@ -176,6 +176,11 @@ class SttService {
         // console.log(`[SttService] Initializing STT for provider: ${modelInfo.provider}`);
 
         const handleMyMessage = message => {
+            if (!this.modelInfo) {
+                console.log('[SttService] Ignoring message - session already closed');
+                return;
+            }
+            
             if (this.modelInfo.provider === 'gemini') {
                 const text = message.serverContent?.inputTranscription?.text || '';
                 if (text && text.trim()) {
@@ -217,6 +222,13 @@ class SttService {
         };
 
         const handleTheirMessage = message => {
+            if (!message || typeof message !== 'object') return;
+
+            if (!this.modelInfo) {
+                console.log('[SttService] Ignoring message - session already closed');
+                return;
+            }
+            
             if (this.modelInfo.provider === 'gemini') {
                 const text = message.serverContent?.inputTranscription?.text || '';
                 if (text && text.trim()) {
@@ -320,14 +332,20 @@ class SttService {
     }
 
     async sendSystemAudioContent(data, mimeType) {
-        const provider = await this.getAiProvider();
-        const isGemini = provider === 'gemini';
-
         if (!this.theirSttSession) {
             throw new Error('Their STT session not active');
         }
 
-        const payload = isGemini
+        let modelInfo = this.modelInfo;
+        if (!modelInfo) {
+            console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
+            modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
+        }
+        if (!modelInfo) {
+            throw new Error('STT model info could not be retrieved.');
+        }
+
+        const payload = modelInfo.provider === 'gemini'
             ? { audio: { data, mimeType: mimeType || 'audio/pcm;rate=24000' } }
             : data;
         

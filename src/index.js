@@ -190,9 +190,11 @@ app.whenReady().then(async () => {
         sessionRepository.endAllActiveSessions();
 
         authService.initialize();
+
         //////// after_modelStateService ////////
         modelStateService.initialize();
         //////// after_modelStateService ////////
+
         listenService.setupIpcHandlers();
         askService.initialize();
         settingsService.initialize();
