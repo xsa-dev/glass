@@ -16,8 +16,17 @@ async function createSTT({ apiKey, language = "en-US", callbacks = {}, ...config
   const lang = language.includes("-") ? language : `${language}-US`
 
   const session = await liveClient.live.connect({
-    model: "gemini-live-2.5-flash-preview",
-    callbacks,
+
+    model: 'gemini-live-2.5-flash-preview',
+    callbacks: {
+      ...callbacks,
+      onMessage: (msg) => {
+        if (!msg || typeof msg !== 'object') return;
+        msg.provider = 'gemini';
+        callbacks.onmessage?.(msg);
+      }
+    },
+
     config: {
       inputAudioTranscription: {},
       speechConfig: { languageCode: lang },

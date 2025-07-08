@@ -31,7 +31,6 @@ jobs:
 
       - name: 🖥️ Build Electron app
         # Run Electron build script from root directory
-
         run: npm run build
 
       - name: 🚨 Send failure notification to Slack

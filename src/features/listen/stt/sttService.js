@@ -222,6 +222,8 @@ class SttService {
         };
 
         const handleTheirMessage = message => {
+            if (!message || typeof message !== 'object') return;
+
             if (!this.modelInfo) {
                 console.log('[SttService] Ignoring message - session already closed');
                 return;
