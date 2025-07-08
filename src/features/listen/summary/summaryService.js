@@ -115,7 +115,7 @@ Please build upon this context while analyzing the new conversation segments.
                 await sessionRepository.touch(this.currentSessionId);
             }
 
-            const modelInfo = await getCurrentModelInfo('llm');
+            const modelInfo = await getCurrentModelInfo(null, { type: 'llm' });
             if (!modelInfo || !modelInfo.apiKey) {
                 throw new Error('AI model or API key is not configured.');
             }
