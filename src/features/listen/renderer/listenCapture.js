@@ -1,5 +1,33 @@
 const { ipcRenderer } = require('electron');
 
+const createAecModule = require('../../../assets/aec.js'); // aec.js 위치
+
+let aecWasm;                           // 전역 캐시
+
+export async function initAec () {
+  if (aecWasm) return aecWasm;         // 이미 초기화됐으면 그대로
+
+  // ⬇️  locateFile: aec.js 가 wasm 로드를 시도할 때 호출
+  aecWasm = await createAecModule({
+    locateFile (filename) {
+      // aec.js 는 ‘aec.wasm’ 한 개만 요청하므로, 주소를 직접 반환
+      return '../../../assets/' + filename;   // ← **브라우저 기준 URL**
+      //  (Electron renderer 에서 file://…/dist/renderer/… 에서 접근)
+    }
+  });
+
+  // C → JS 래퍼
+  aecWasm.newPtr  = aecWasm.cwrap('AecNew',        'number',
+                                  ['number','number','number','number']);
+  aecWasm.cancel  = aecWasm.cwrap('AecCancelEcho', null,
+                                  ['number','number','number','number','number']);
+  aecWasm.destroy = aecWasm.cwrap('AecDestroy',    null, ['number']);
+
+  return aecWasm;
+}
+
+// 바로 로드-실패 로그를 보기 위해
+initAec().catch(console.error);
 // ---------------------------
 // Constants & Globals
 // ---------------------------
@@ -78,6 +106,24 @@ function arrayBufferToBase64(buffer) {
         binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
+}
+
+function int16PtrFromFloat32(mod, f32) {
+  const len   = f32.length;
+  const bytes = len * 2;
+  const ptr   = mod._malloc(bytes);
+  const i16   = new Int16Array(mod.HEAP16.buffer, ptr, len);
+  for (let i = 0; i < len; ++i) {
+    const s = Math.max(-1, Math.min(1, f32[i]));
+    i16[i]  = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return { ptr, view: i16 };
+}
+
+function float32FromInt16View(i16) {
+  const out = new Float32Array(i16.length);
+  for (let i = 0; i < i16.length; ++i) out[i] = i16[i] / 32768;
+  return out;
 }
 
 // ---------------------------
