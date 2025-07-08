@@ -36,7 +36,6 @@ class AuthService {
         this.currentUserId = 'default_user';
         this.currentUserMode = 'local'; // 'local' or 'firebase'
         this.currentUser = null;
-        this.hasApiKey = false; // Add a flag for API key status
         this.isInitialized = false;
     }
 
@@ -53,20 +52,18 @@ class AuthService {
                 this.currentUser = user;
                 this.currentUserId = user.uid;
                 this.currentUserMode = 'firebase';
-                this.hasApiKey = false; // Optimistically assume no key yet
-
-                // Broadcast immediately to make UI feel responsive
-                this.broadcastUserState();
 
                 // Start background task to fetch and save virtual key
                 (async () => {
                     try {
                         const idToken = await user.getIdToken(true);
                         const virtualKey = await getVirtualKeyByEmail(user.email, idToken);
-                        await userRepository.saveApiKey(virtualKey, user.uid, 'openai');
-                        console.log(`[AuthService] BG: Virtual key for ${user.email} has been saved.`);
-                        // Now update the key status, which will trigger another broadcast
-                        await this.updateApiKeyStatus();
+
+                        if (global.modelStateService) {
+                            global.modelStateService.setFirebaseVirtualKey(virtualKey);
+                        }
+                        console.log(`[AuthService] BG: Virtual key for ${user.email} has been processed.`);
+
                     } catch (error) {
                         console.error('[AuthService] BG: Failed to fetch or save virtual key:', error);
                     }
@@ -74,23 +71,20 @@ class AuthService {
 
             } else {
                 // User signed OUT
-                console.log(`[AuthService] Firebase user signed out.`);
+                console.log(`[AuthService] No Firebase user.`);
                 if (previousUser) {
                     console.log(`[AuthService] Clearing API key for logged-out user: ${previousUser.uid}`);
-                    await userRepository.saveApiKey(null, previousUser.uid);
+                    if (global.modelStateService) {
+                        global.modelStateService.setFirebaseVirtualKey(null);
+                    }
                 }
                 this.currentUser = null;
                 this.currentUserId = 'default_user';
                 this.currentUserMode = 'local';
-                // Update API key status (e.g., if a local key for default_user exists)
-                // This will also broadcast the final logged-out state.
-                await this.updateApiKeyStatus();
             }
+            this.broadcastUserState();
         });
 
-        // Check for initial API key state
-        this.updateApiKeyStatus();
-        
         this.isInitialized = true;
         console.log('[AuthService] Initialized and attached to Firebase Auth state.');
     }
@@ -129,23 +123,6 @@ class AuthService {
         });
     }
 
-    /**
-     * Updates the internal API key status from the repository and broadcasts if changed.
-     */
-    async updateApiKeyStatus() {
-        try {
-            const user = await userRepository.getById(this.currentUserId);
-            const newStatus = !!(user && user.api_key);
-            if (this.hasApiKey !== newStatus) {
-                console.log(`[AuthService] API key status changed to: ${newStatus}`);
-                this.hasApiKey = newStatus;
-                this.broadcastUserState();
-            }
-        } catch (error) {
-            console.error('[AuthService] Error checking API key status:', error);
-            this.hasApiKey = false;
-        }
-    }
 
     getCurrentUserId() {
         return this.currentUserId;
@@ -161,7 +138,9 @@ class AuthService {
                 displayName: this.currentUser.displayName,
                 mode: 'firebase',
                 isLoggedIn: true,
-                hasApiKey: this.hasApiKey // Always true for firebase users, but good practice
+                //////// before_modelStateService ////////
+                // hasApiKey: this.hasApiKey // Always true for firebase users, but good practice
+                //////// before_modelStateService ////////
             };
         }
         return {
@@ -170,7 +149,9 @@ class AuthService {
             displayName: 'Default User',
             mode: 'local',
             isLoggedIn: false,
-            hasApiKey: this.hasApiKey
+            //////// before_modelStateService ////////
+            // hasApiKey: this.hasApiKey
+            //////// before_modelStateService ////////
         };
     }
 }

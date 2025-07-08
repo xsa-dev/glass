@@ -44,6 +44,8 @@ win:
         - target: portable
           arch: x64
     requestedExecutionLevel: asInvoker
+    # Disable code signing to avoid symbolic link issues on Windows
+    signAndEditExecutable: false
 
 # NSIS installer configuration for Windows
 nsis:

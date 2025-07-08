@@ -1,7 +1,9 @@
 {
     "name": "pickle-glass",
     "productName": "Glass",
-    "version": "0.2.1",
+
+    "version": "0.2.2",
+
     "description": "Cl*ely for Free",
     "main": "src/index.js",
     "scripts": {
@@ -9,12 +11,14 @@
         "start": "npm run build:renderer && electron-forge start",
         "package": "npm run build:renderer && electron-forge package",
         "make": "npm run build:renderer && electron-forge make",
-        "build": "npm run build:renderer && electron-builder --config electron-builder.yml --publish never",
-        "build:win": "npm run build:renderer && electron-builder --win --x64 --publish never", 
-        "publish": "npm run build:renderer && electron-builder --config electron-builder.yml --publish always",
+        "build": "npm run build:all && electron-builder --config electron-builder.yml --publish never",
+        "build:win": "npm run build:all && electron-builder --win --x64 --publish never", 
+        "publish": "npm run build:all && electron-builder --config electron-builder.yml --publish always",
         "lint": "eslint --ext .ts,.tsx,.js .",
         "postinstall": "electron-builder install-app-deps",
         "build:renderer": "node build.js",
+        "build:web": "cd pickleglass_web && npm run build && cd ..",
+        "build:all": "npm run build:renderer && npm run build:web",
         "watch:renderer": "node build.js --watch"
     },
     "keywords": [

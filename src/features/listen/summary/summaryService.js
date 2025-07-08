@@ -4,7 +4,7 @@ const { createLLM } = require('../../../common/ai/factory');
 const authService = require('../../../common/services/authService');
 const sessionRepository = require('../../../common/repositories/session');
 const summaryRepository = require('./repositories');
-const { getStoredApiKey, getStoredProvider } = require('../../../electron/windowManager');
+const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../electron/windowManager');
 
 class SummaryService {
     constructor() {
@@ -27,22 +27,22 @@ class SummaryService {
         this.currentSessionId = sessionId;
     }
 
-    async getApiKey() {
-        const storedKey = await getStoredApiKey();
-        if (storedKey) {
-            console.log('[SummaryService] Using stored API key');
-            return storedKey;
-        }
+    // async getApiKey() {
+    //     const storedKey = await getStoredApiKey();
+    //     if (storedKey) {
+    //         console.log('[SummaryService] Using stored API key');
+    //         return storedKey;
+    //     }
 
-        const envKey = process.env.OPENAI_API_KEY;
-        if (envKey) {
-            console.log('[SummaryService] Using environment API key');
-            return envKey;
-        }
+    //     const envKey = process.env.OPENAI_API_KEY;
+    //     if (envKey) {
+    //         console.log('[SummaryService] Using environment API key');
+    //         return envKey;
+    //     }
 
-        console.error('[SummaryService] No API key found in storage or environment');
-        return null;
-    }
+    //     console.error('[SummaryService] No API key found in storage or environment');
+    //     return null;
+    // }
 
     sendToRenderer(channel, data) {
         BrowserWindow.getAllWindows().forEach(win => {
@@ -114,6 +114,12 @@ Please build upon this context while analyzing the new conversation segments.
             if (this.currentSessionId) {
                 await sessionRepository.touch(this.currentSessionId);
             }
+
+            const modelInfo = await getCurrentModelInfo(null, { type: 'llm' });
+            if (!modelInfo || !modelInfo.apiKey) {
+                throw new Error('AI model or API key is not configured.');
+            }
+            console.log(`🤖 Sending analysis request to ${modelInfo.provider} using model ${modelInfo.model}`);
             
             const messages = [
                 {
@@ -148,23 +154,13 @@ Keep all points concise and build upon previous analysis if provided.`,
 
             console.log('🤖 Sending analysis request to AI...');
 
-            const API_KEY = await this.getApiKey();
-            if (!API_KEY) {
-                throw new Error('No API key available');
-            }
-            
-            const provider = getStoredProvider ? await getStoredProvider() : 'openai';
-            const loggedIn = authService.getCurrentUser().isLoggedIn;
-            
-            console.log(`[SummaryService] provider: ${provider}, loggedIn: ${loggedIn}`);
-
-            const llm = createLLM(provider, {
-                apiKey: API_KEY,
-                model: provider === 'openai' ? 'gpt-4.1' : 'gemini-2.5-flash',
+            const llm = createLLM(modelInfo.provider, {
+                apiKey: modelInfo.apiKey,
+                model: modelInfo.model,
                 temperature: 0.7,
                 maxTokens: 1024,
-                usePortkey: provider === 'openai' && loggedIn,
-                portkeyVirtualKey: loggedIn ? API_KEY : undefined
+                usePortkey: modelInfo.provider === 'openai-glass',
+                portkeyVirtualKey: modelInfo.provider === 'openai-glass' ? modelInfo.apiKey : undefined,
             });
 
             const completion = await llm.chat(messages);
@@ -174,14 +170,18 @@ Keep all points concise and build upon previous analysis if provided.`,
             const structuredData = this.parseResponseText(responseText, this.previousAnalysisResult);
 
             if (this.currentSessionId) {
-                summaryRepository.saveSummary({
-                    sessionId: this.currentSessionId,
-                    text: responseText,
-                    tldr: structuredData.summary.join('\n'),
-                    bullet_json: JSON.stringify(structuredData.topic.bullets),
-                    action_json: JSON.stringify(structuredData.actions),
-                    model: 'gpt-4.1'
-                }).catch(err => console.error('[DB] Failed to save summary:', err));
+                try {
+                    summaryRepository.saveSummary({
+                        sessionId: this.currentSessionId,
+                        text: responseText,
+                        tldr: structuredData.summary.join('\n'),
+                        bullet_json: JSON.stringify(structuredData.topic.bullets),
+                        action_json: JSON.stringify(structuredData.actions),
+                        model: modelInfo.model
+                    });
+                } catch (err) {
+                    console.error('[DB] Failed to save summary:', err);
+                }
             }
 
             // 분석 결과 저장
@@ -192,7 +192,6 @@ Keep all points concise and build upon previous analysis if provided.`,
                 conversationLength: conversationTexts.length,
             });
 
-            // 히스토리 크기 제한 (최근 10개만 유지)
             if (this.analysisHistory.length > 10) {
                 this.analysisHistory.shift();
             }

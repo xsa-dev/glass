@@ -1,7 +1,7 @@
 const { BrowserWindow } = require('electron');
 const { spawn } = require('child_process');
 const { createSTT } = require('../../../common/ai/factory');
-const { getStoredApiKey, getStoredProvider } = require('../../../electron/windowManager');
+const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../electron/windowManager');
 
 const COMPLETION_DEBOUNCE_MS = 2000;
 
@@ -29,6 +29,8 @@ class SttService {
         // Callbacks
         this.onTranscriptionComplete = null;
         this.onStatusUpdate = null;
+
+        this.modelInfo = null; 
     }
 
     setCallbacks({ onTranscriptionComplete, onStatusUpdate }) {
@@ -36,32 +38,32 @@ class SttService {
         this.onStatusUpdate = onStatusUpdate;
     }
 
-    async getApiKey() {
-        const storedKey = await getStoredApiKey();
-        if (storedKey) {
-            console.log('[SttService] Using stored API key');
-            return storedKey;
-        }
+    // async getApiKey() {
+    //     const storedKey = await getStoredApiKey();
+    //     if (storedKey) {
+    //         console.log('[SttService] Using stored API key');
+    //         return storedKey;
+    //     }
 
-        const envKey = process.env.OPENAI_API_KEY;
-        if (envKey) {
-            console.log('[SttService] Using environment API key');
-            return envKey;
-        }
+    //     const envKey = process.env.OPENAI_API_KEY;
+    //     if (envKey) {
+    //         console.log('[SttService] Using environment API key');
+    //         return envKey;
+    //     }
 
-        console.error('[SttService] No API key found in storage or environment');
-        return null;
-    }
+    //     console.error('[SttService] No API key found in storage or environment');
+    //     return null;
+    // }
 
-    async getAiProvider() {
-        try {
-            const { ipcRenderer } = require('electron');
-            const provider = await ipcRenderer.invoke('get-ai-provider');
-            return provider || 'openai';
-        } catch (error) {
-            return getStoredProvider ? getStoredProvider() : 'openai';
-        }
-    }
+    // async getAiProvider() {
+    //     try {
+    //         const { ipcRenderer } = require('electron');
+    //         const provider = await ipcRenderer.invoke('get-ai-provider');
+    //         return provider || 'openai';
+    //     } catch (error) {
+    //         return getStoredProvider ? getStoredProvider() : 'openai';
+    //     }
+    // }
 
     sendToRenderer(channel, data) {
         BrowserWindow.getAllWindows().forEach(win => {
@@ -72,7 +74,7 @@ class SttService {
     }
 
     flushMyCompletion() {
-        if (!this.myCompletionBuffer.trim()) return;
+        if (!this.modelInfo || !this.myCompletionBuffer.trim()) return;
 
         const finalText = this.myCompletionBuffer.trim();
         
@@ -100,7 +102,7 @@ class SttService {
     }
 
     flushTheirCompletion() {
-        if (!this.theirCompletionBuffer.trim()) return;
+        if (!this.modelInfo || !this.theirCompletionBuffer.trim()) return;
 
         const finalText = this.theirCompletionBuffer.trim();
         
@@ -156,17 +158,30 @@ class SttService {
     async initializeSttSessions(language = 'en') {
         const effectiveLanguage = process.env.OPENAI_TRANSCRIBE_LANG || language || 'en';
         
-        const API_KEY = await this.getApiKey();
-        if (!API_KEY) {
-            throw new Error('No API key available');
-        }
+        // const API_KEY = await this.getApiKey();
+        // if (!API_KEY) {
+        //     throw new Error('No API key available');
+        // }
+        // const provider = await this.getAiProvider();
 
-        const provider = await this.getAiProvider();
-        const isGemini = provider === 'gemini';
-        console.log(`[SttService] Initializing STT for provider: ${provider}`);
+        const modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
+        if (!modelInfo || !modelInfo.apiKey) {
+            throw new Error('AI model or API key is not configured.');
+        }
+        this.modelInfo = modelInfo;
+        console.log(`[SttService] Initializing STT for ${modelInfo.provider} using model ${modelInfo.model}`);
+
+
+        // const isGemini = modelInfo.provider === 'gemini';
+        // console.log(`[SttService] Initializing STT for provider: ${modelInfo.provider}`);
 
         const handleMyMessage = message => {
-            if (isGemini) {
+            if (!this.modelInfo) {
+                console.log('[SttService] Ignoring message - session already closed');
+                return;
+            }
+            
+            if (this.modelInfo.provider === 'gemini') {
                 const text = message.serverContent?.inputTranscription?.text || '';
                 if (text && text.trim()) {
                     const finalUtteranceText = text.trim().replace(/<noise>/g, '').trim();
@@ -207,7 +222,12 @@ class SttService {
         };
 
         const handleTheirMessage = message => {
-            if (isGemini) {
+            if (!this.modelInfo) {
+                console.log('[SttService] Ignoring message - session already closed');
+                return;
+            }
+            
+            if (this.modelInfo.provider === 'gemini') {
                 const text = message.serverContent?.inputTranscription?.text || '';
                 if (text && text.trim()) {
                     const finalUtteranceText = text.trim().replace(/<noise>/g, '').trim();
@@ -265,20 +285,20 @@ class SttService {
         };
 
         // Determine auth options for providers that support it
-        const authService = require('../../../common/services/authService');
-        const userState = authService.getCurrentUser();
-        const loggedIn = userState.isLoggedIn;
+        // const authService = require('../../../common/services/authService');
+        // const userState = authService.getCurrentUser();
+        // const loggedIn = userState.isLoggedIn;
         
         const sttOptions = {
-            apiKey: API_KEY,
+            apiKey: this.modelInfo.apiKey,
             language: effectiveLanguage,
-            usePortkey: !isGemini && loggedIn, // Only OpenAI supports Portkey
-            portkeyVirtualKey: loggedIn ? API_KEY : undefined
+            usePortkey: this.modelInfo.provider === 'openai-glass',
+            portkeyVirtualKey: this.modelInfo.provider === 'openai-glass' ? this.modelInfo.apiKey : undefined,
         };
 
         [this.mySttSession, this.theirSttSession] = await Promise.all([
-            createSTT(provider, { ...sttOptions, callbacks: mySttConfig.callbacks }),
-            createSTT(provider, { ...sttOptions, callbacks: theirSttConfig.callbacks }),
+            createSTT(this.modelInfo.provider, { ...sttOptions, callbacks: mySttConfig.callbacks }),
+            createSTT(this.modelInfo.provider, { ...sttOptions, callbacks: theirSttConfig.callbacks }),
         ]);
 
         console.log('✅ Both STT sessions initialized successfully.');
@@ -286,18 +306,48 @@ class SttService {
     }
 
     async sendAudioContent(data, mimeType) {
-        const provider = await this.getAiProvider();
-        const isGemini = provider === 'gemini';
+        // const provider = await this.getAiProvider();
+        // const isGemini = provider === 'gemini';
         
         if (!this.mySttSession) {
             throw new Error('User STT session not active');
         }
 
-        const payload = isGemini
+        let modelInfo = this.modelInfo;
+        if (!modelInfo) {
+            console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
+            modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
+        }
+        if (!modelInfo) {
+            throw new Error('STT model info could not be retrieved.');
+        }
+
+        const payload = modelInfo.provider === 'gemini'
             ? { audio: { data, mimeType: mimeType || 'audio/pcm;rate=24000' } }
             : data;
 
         await this.mySttSession.sendRealtimeInput(payload);
+    }
+
+    async sendSystemAudioContent(data, mimeType) {
+        if (!this.theirSttSession) {
+            throw new Error('Their STT session not active');
+        }
+
+        let modelInfo = this.modelInfo;
+        if (!modelInfo) {
+            console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
+            modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
+        }
+        if (!modelInfo) {
+            throw new Error('STT model info could not be retrieved.');
+        }
+
+        const payload = modelInfo.provider === 'gemini'
+            ? { audio: { data, mimeType: mimeType || 'audio/pcm;rate=24000' } }
+            : data;
+        
+        await this.theirSttSession.sendRealtimeInput(payload);
     }
 
     killExistingSystemAudioDump() {
@@ -362,8 +412,17 @@ class SttService {
 
         let audioBuffer = Buffer.alloc(0);
 
-        const provider = await this.getAiProvider();
-        const isGemini = provider === 'gemini';
+        // const provider = await this.getAiProvider();
+        // const isGemini = provider === 'gemini';
+
+        let modelInfo = this.modelInfo;
+        if (!modelInfo) {
+            console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
+            modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
+        }
+        if (!modelInfo) {
+            throw new Error('STT model info could not be retrieved.');
+        }
 
         this.systemAudioProc.stdout.on('data', async data => {
             audioBuffer = Buffer.concat([audioBuffer, data]);
@@ -379,7 +438,7 @@ class SttService {
 
                 if (this.theirSttSession) {
                     try {
-                        const payload = isGemini
+                        const payload = modelInfo.provider === 'gemini'
                             ? { audio: { data: base64Data, mimeType: 'audio/pcm;rate=24000' } }
                             : base64Data;
                         await this.theirSttSession.sendRealtimeInput(payload);
@@ -472,6 +531,7 @@ class SttService {
         this.theirLastPartialText = '';
         this.myCompletionBuffer = '';
         this.theirCompletionBuffer = '';
+        this.modelInfo = null; 
     }
 }
 

@@ -15,6 +15,8 @@ let micMediaStream = null;
 let screenshotInterval = null;
 let audioContext = null;
 let audioProcessor = null;
+let systemAudioContext = null;
+let systemAudioProcessor = null;
 let currentImageQuality = 'medium';
 let lastScreenshotBase64 = null;
 
@@ -345,6 +347,7 @@ function setupMicProcessing(micStream) {
     micProcessor.connect(micAudioContext.destination);
 
     audioProcessor = micProcessor;
+    return { context: micAudioContext, processor: micProcessor };
 }
 
 function setupLinuxMicProcessing(micStream) {
@@ -380,34 +383,40 @@ function setupLinuxMicProcessing(micStream) {
     audioProcessor = micProcessor;
 }
 
-function setupWindowsLoopbackProcessing() {
-    // Setup audio processing for Windows loopback audio only
-    audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
+function setupSystemAudioProcessing(systemStream) {
+    const systemAudioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+    const systemSource = systemAudioContext.createMediaStreamSource(systemStream);
+    const systemProcessor = systemAudioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
     let audioBuffer = [];
     const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
 
-    audioProcessor.onaudioprocess = async e => {
+    systemProcessor.onaudioprocess = async e => {
         const inputData = e.inputBuffer.getChannelData(0);
+        if (!inputData || inputData.length === 0) return;
+        
         audioBuffer.push(...inputData);
 
-        // Process audio in chunks
         while (audioBuffer.length >= samplesPerChunk) {
             const chunk = audioBuffer.splice(0, samplesPerChunk);
             const pcmData16 = convertFloat32ToInt16(chunk);
             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-            await ipcRenderer.invoke('send-audio-content', {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            });
+            try {
+                await ipcRenderer.invoke('send-system-audio-content', {
+                    data: base64Data,
+                    mimeType: 'audio/pcm;rate=24000',
+                });
+            } catch (error) {
+                console.error('Failed to send system audio:', error);
+            }
         }
     };
 
-    source.connect(audioProcessor);
-    audioProcessor.connect(audioContext.destination);
+    systemSource.connect(systemProcessor);
+    systemProcessor.connect(systemAudioContext.destination);
+
+    return { context: systemAudioContext, processor: systemProcessor };
 }
 
 // ---------------------------
@@ -534,7 +543,9 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                 });
 
                 console.log('macOS microphone capture started');
-                setupMicProcessing(micMediaStream);
+                const { context, processor } = setupMicProcessing(micMediaStream);
+                audioContext = context;
+                audioProcessor = processor;
             } catch (micErr) {
                 console.warn('Failed to get microphone on macOS:', micErr);
             }
@@ -577,27 +588,62 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
 
             console.log('Linux screen capture started');
         } else {
-            // Windows - use display media for audio, main process for screenshots
+            // Windows - capture mic and system audio separately using native loopback
+            console.log('Starting Windows capture with native loopback audio...');
+
+            // Start screen capture in main process for screenshots
             const screenResult = await ipcRenderer.invoke('start-screen-capture');
             if (!screenResult.success) {
                 throw new Error('Failed to start screen capture: ' + screenResult.error);
             }
 
-            mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                video: false, // We don't need video in renderer
-                audio: {
-                    sampleRate: SAMPLE_RATE,
-                    channelCount: 1,
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                },
-            });
+            // Ensure STT sessions are initialized before starting audio capture
+            const sessionActive = await ipcRenderer.invoke('is-session-active');
+            if (!sessionActive) {
+                throw new Error('STT sessions not initialized - please wait for initialization to complete');
+            }
 
-            console.log('Windows capture started with loopback audio');
+            // 1. Get user's microphone
+            try {
+                micMediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: SAMPLE_RATE,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                    },
+                    video: false,
+                });
+                console.log('Windows microphone capture started');
+                const { context, processor } = setupMicProcessing(micMediaStream);
+                audioContext = context;
+                audioProcessor = processor;
+            } catch (micErr) {
+                console.warn('Could not get microphone access on Windows:', micErr);
+            }
 
-            // Setup audio processing for Windows loopback audio only
-            setupWindowsLoopbackProcessing();
+            // 2. Get system audio using native Electron loopback
+            try {
+                mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: true // This will now use native loopback from our handler
+                });
+                
+                // Verify we got audio tracks
+                const audioTracks = mediaStream.getAudioTracks();
+                if (audioTracks.length === 0) {
+                    throw new Error('No audio track in native loopback stream');
+                }
+                
+                console.log('Windows native loopback audio capture started');
+                const { context, processor } = setupSystemAudioProcessing(mediaStream);
+                systemAudioContext = context;
+                systemAudioProcessor = processor;
+            } catch (sysAudioErr) {
+                console.error('Failed to start Windows native loopback audio:', sysAudioErr);
+                // Continue without system audio
+            }
         }
 
         // Start capturing screenshots - check if manual mode
@@ -626,21 +672,31 @@ function stopCapture() {
         screenshotInterval = null;
     }
 
+    // Clean up microphone resources
     if (audioProcessor) {
         audioProcessor.disconnect();
         audioProcessor = null;
     }
-
     if (audioContext) {
         audioContext.close();
         audioContext = null;
     }
 
+    // Clean up system audio resources
+    if (systemAudioProcessor) {
+        systemAudioProcessor.disconnect();
+        systemAudioProcessor = null;
+    }
+    if (systemAudioContext) {
+        systemAudioContext.close();
+        systemAudioContext = null;
+    }
+
+    // Stop and release media stream tracks
     if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
         mediaStream = null;
     }
-
     if (micMediaStream) {
         micMediaStream.getTracks().forEach(t => t.stop());
         micMediaStream = null;

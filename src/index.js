@@ -11,7 +11,7 @@ if (require('electron-squirrel-startup')) {
     process.exit(0);
 }
 
-const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog, desktopCapturer, session } = require('electron');
 const { createWindows } = require('./electron/windowManager.js');
 const ListenService = require('./features/listen/listenService');
 const { initializeFirebase } = require('./common/services/firebaseClient');
@@ -25,6 +25,7 @@ const { EventEmitter } = require('events');
 const askService = require('./features/ask/askService');
 const settingsService = require('./features/settings/settingsService');
 const sessionRepository = require('./common/repositories/session');
+const ModelStateService = require('./common/services/modelStateService');
 
 const eventBridge = new EventEmitter();
 let WEB_PORT = 3000;
@@ -32,6 +33,11 @@ let WEB_PORT = 3000;
 const listenService = new ListenService();
 // Make listenService globally accessible so other modules (e.g., windowManager, askService) can reuse the same instance
 global.listenService = listenService;
+
+//////// after_modelStateService ////////
+const modelStateService = new ModelStateService(authService);
+global.modelStateService = modelStateService;
+//////// after_modelStateService ////////
 
 // Native deep link handling - cross-platform compatible
 let pendingDeepLinkUrl = null;
@@ -162,6 +168,17 @@ setupProtocolHandling();
 
 app.whenReady().then(async () => {
 
+    // Setup native loopback audio capture for Windows
+    session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+        desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+            // Grant access to the first screen found with loopback audio
+            callback({ video: sources[0], audio: 'loopback' });
+        }).catch((error) => {
+            console.error('Failed to get desktop capturer sources:', error);
+            callback({});
+        });
+    });
+
     // Initialize core services
     initializeFirebase();
     
@@ -173,6 +190,11 @@ app.whenReady().then(async () => {
         sessionRepository.endAllActiveSessions();
 
         authService.initialize();
+
+        //////// after_modelStateService ////////
+        modelStateService.initialize();
+        //////// after_modelStateService ////////
+
         listenService.setupIpcHandlers();
         askService.initialize();
         settingsService.initialize();

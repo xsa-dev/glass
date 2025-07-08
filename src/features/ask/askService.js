@@ -1,6 +1,6 @@
 const { ipcMain, BrowserWindow } = require('electron');
 const { createStreamingLLM } = require('../../common/ai/factory');
-const { getStoredApiKey, getStoredProvider, windowPool, captureScreenshot } = require('../../electron/windowManager');
+const { getStoredApiKey, getStoredProvider, getCurrentModelInfo, windowPool, captureScreenshot } = require('../../electron/windowManager');
 const authService = require('../../common/services/authService');
 const sessionRepository = require('../../common/repositories/session');
 const askRepository = require('./repositories');
@@ -31,6 +31,12 @@ async function sendMessage(userPrompt) {
     try {
         console.log(`[AskService] 🤖 Processing message: ${userPrompt.substring(0, 50)}...`);
 
+        const modelInfo = await getCurrentModelInfo(null, { type: 'llm' });
+        if (!modelInfo || !modelInfo.apiKey) {
+            throw new Error('AI model or API key not configured.');
+        }
+        console.log(`[AskService] Using model: ${modelInfo.model} for provider: ${modelInfo.provider}`);
+
         const screenshotResult = await captureScreenshot({ quality: 'medium' });
         const screenshotBase64 = screenshotResult.success ? screenshotResult.base64 : null;
 
@@ -39,10 +45,6 @@ async function sendMessage(userPrompt) {
 
         const systemPrompt = getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
 
-        const API_KEY = await getStoredApiKey();
-        if (!API_KEY) {
-            throw new Error('No API key found');
-        }
 
         const messages = [
             { role: 'system', content: systemPrompt },
@@ -61,36 +63,13 @@ async function sendMessage(userPrompt) {
             });
         }
         
-        const provider = await getStoredProvider();
-        const { isLoggedIn } = authService.getCurrentUser();
-        
-        console.log(`[AskService] 🚀 Sending request to ${provider} AI...`);
-
-        // FIX: Proper model selection for each provider
-        let model;
-        switch (provider) {
-            case 'openai':
-                model = 'gpt-4o'; // Use a valid OpenAI model
-                break;
-            case 'gemini':
-                model = 'gemini-2.0-flash-exp'; // Use a valid Gemini model
-                break;
-            case 'anthropic':
-                model = 'claude-3-5-sonnet-20241022'; // Use a valid Claude model
-                break;
-            default:
-                model = 'gpt-4o'; // Default fallback
-        }
-
-        console.log(`[AskService] Using model: ${model} for provider: ${provider}`);
-
-        const streamingLLM = createStreamingLLM(provider, {
-            apiKey: API_KEY,
-            model: model,
+        const streamingLLM = createStreamingLLM(modelInfo.provider, {
+            apiKey: modelInfo.apiKey,
+            model: modelInfo.model,
             temperature: 0.7,
             maxTokens: 2048,
-            usePortkey: provider === 'openai' && isLoggedIn,
-            portkeyVirtualKey: isLoggedIn ? API_KEY : undefined
+            usePortkey: modelInfo.provider === 'openai-glass',
+            portkeyVirtualKey: modelInfo.provider === 'openai-glass' ? modelInfo.apiKey : undefined,
         });
 
         const response = await streamingLLM.streamChat(messages);

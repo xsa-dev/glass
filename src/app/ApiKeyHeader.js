@@ -1,12 +1,17 @@
 import { html, css, LitElement } from "../assets/lit-core-2.7.4.min.js"
 
 export class ApiKeyHeader extends LitElement {
+  //////// after_modelStateService ////////
   static properties = {
-    apiKey: { type: String },
+    llmApiKey: { type: String },
+    sttApiKey: { type: String },
+    llmProvider: { type: String },
+    sttProvider: { type: String },
     isLoading: { type: Boolean },
     errorMessage: { type: String },
-    selectedProvider: { type: String },
+    providers: { type: Object, state: true },
   }
+  //////// after_modelStateService ////////
 
   static styles = css`
         :host {
@@ -45,7 +50,7 @@ export class ApiKeyHeader extends LitElement {
         }
 
         .container {
-            width: 285px;
+            width: 350px;
             min-height: 260px;
             padding: 18px 20px;
             background: rgba(0, 0, 0, 0.3);
@@ -153,28 +158,22 @@ export class ApiKeyHeader extends LitElement {
             outline: none;
         }
 
-        .provider-select {
+        .providers-container { display: flex; gap: 12px; width: 100%; }
+        .provider-column { flex: 1; display: flex; flex-direction: column; align-items: center; }
+        .provider-label { color: rgba(255, 255, 255, 0.7); font-size: 11px; font-weight: 500; margin-bottom: 6px; }
+        .api-input, .provider-select {
             width: 100%;
             height: 34px;
+            text-align: center;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 10px;
             border: 1px solid rgba(255, 255, 255, 0.2);
             padding: 0 10px;
             color: white;
             font-size: 12px;
-            font-weight: 400;
             margin-bottom: 6px;
-            text-align: center;
-            cursor: pointer;
-            -webkit-appearance: none;
-            -moz-appearance: none;
-            appearance: none;
-            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2714%27%20height%3D%278%27%20viewBox%3D%270%200%2014%208%27%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%3E%3Cpath%20d%3D%27M1%201l6%206%206-6%27%20stroke%3D%27%23ffffff%27%20stroke-width%3D%271.5%27%20fill%3D%27none%27%20fill-rule%3D%27evenodd%27/%3E%3C/svg%3E');
-            background-repeat: no-repeat;
-            background-position: right 10px center;
-            background-size: 12px;
-            padding-right: 30px;
         }
+        .provider-select option { background: #1a1a1a; color: white; }
 
         .provider-select:hover {
             background-color: rgba(255, 255, 255, 0.15);
@@ -187,11 +186,6 @@ export class ApiKeyHeader extends LitElement {
             border-color: rgba(255, 255, 255, 0.4);
         }
 
-        .provider-select option {
-            background: #1a1a1a;
-            color: white;
-            padding: 5px;
-        }
 
         .action-button {
             width: 100%;
@@ -239,15 +233,7 @@ export class ApiKeyHeader extends LitElement {
             font-weight: 500; /* Medium */
             margin: 10px 0;
         }
-        
-        .provider-label {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 11px;
-            font-weight: 400;
-            margin-bottom: 4px;
-            width: 100%;
-            text-align: left;
-        }
+
         
         /* ────────────────[ GLASS BYPASS ]─────────────── */
         :host-context(body.has-glass) .container,
@@ -278,11 +264,16 @@ export class ApiKeyHeader extends LitElement {
     super()
     this.dragState = null
     this.wasJustDragged = false
-    this.apiKey = ""
     this.isLoading = false
     this.errorMessage = ""
-    this.validatedApiKey = null
-    this.selectedProvider = "openai"
+    //////// after_modelStateService ////////
+    this.llmApiKey = "";
+    this.sttApiKey = "";
+    this.llmProvider = "openai";
+    this.sttProvider = "openai";
+    this.providers = { llm: [], stt: [] }; // 초기화
+    this.loadProviderConfig();
+    //////// after_modelStateService ////////
 
     this.handleMouseMove = this.handleMouseMove.bind(this)
     this.handleMouseUp = this.handleMouseUp.bind(this)
@@ -302,6 +293,35 @@ export class ApiKeyHeader extends LitElement {
     this.selectedProvider = "openai"
     this.requestUpdate()
   }
+
+  async loadProviderConfig() {
+    if (!window.require) return;
+    const { ipcRenderer } = window.require('electron');
+    const config = await ipcRenderer.invoke('model:get-provider-config');
+    
+    const llmProviders = [];
+    const sttProviders = [];
+
+    for (const id in config) {
+        // 'openai-glass' 같은 가상 Provider는 UI에 표시하지 않음
+        if (id.includes('-glass')) continue;
+
+        if (config[id].llmModels.length > 0) {
+            llmProviders.push({ id, name: config[id].name });
+        }
+        if (config[id].sttModels.length > 0) {
+            sttProviders.push({ id, name: config[id].name });
+        }
+    }
+    
+    this.providers = { llm: llmProviders, stt: sttProviders };
+    
+    // 기본 선택 값 설정
+    if (llmProviders.length > 0) this.llmProvider = llmProviders[0].id;
+    if (sttProviders.length > 0) this.sttProvider = sttProviders[0].id;
+    
+    this.requestUpdate();
+}
 
   async handleMouseDown(e) {
     if (e.target.tagName === "INPUT" || e.target.tagName === "BUTTON" || e.target.tagName === "SELECT") {
@@ -409,144 +429,45 @@ export class ApiKeyHeader extends LitElement {
     }
   }
 
+  //////// after_modelStateService ////////
   async handleSubmit() {
-    if (this.wasJustDragged || this.isLoading || !this.apiKey.trim()) {
-      console.log("Submit blocked:", {
-        wasJustDragged: this.wasJustDragged,
-        isLoading: this.isLoading,
-        hasApiKey: !!this.apiKey.trim(),
-      })
-      return
+    console.log('[ApiKeyHeader] handleSubmit: Submitting API keys...');
+    if (this.isLoading || !this.llmApiKey.trim() || !this.sttApiKey.trim()) {
+        this.errorMessage = "Please enter keys for both LLM and STT.";
+        return;
     }
 
-    console.log("Starting API key validation...")
-    this.isLoading = true
-    this.errorMessage = ""
-    this.requestUpdate()
+    this.isLoading = true;
+    this.errorMessage = "";
+    this.requestUpdate();
 
-    const apiKey = this.apiKey.trim()
-    const isValid = false
-    try {
-      const isValid = await this.validateApiKey(this.apiKey.trim(), this.selectedProvider)
+    const { ipcRenderer } = window.require('electron');
 
-      if (isValid) {
-        console.log("API key valid - starting slide out animation")
-        this.startSlideOutAnimation()
-        this.validatedApiKey = this.apiKey.trim()
-        this.validatedProvider = this.selectedProvider
-      } else {
-        this.errorMessage = "Invalid API key - please check and try again"
-        console.log("API key validation failed")
-      }
-    } catch (error) {
-      console.error("API key validation error:", error)
-      this.errorMessage = "Validation error - please try again"
-    } finally {
-      this.isLoading = false
-      this.requestUpdate()
-    }
-  }
+    console.log('[ApiKeyHeader] handleSubmit: Validating LLM key...');
+    const llmValidation = ipcRenderer.invoke('model:validate-key', { provider: this.llmProvider, key: this.llmApiKey.trim() });
+    const sttValidation = ipcRenderer.invoke('model:validate-key', { provider: this.sttProvider, key: this.sttApiKey.trim() });
 
-  async validateApiKey(apiKey, provider = "openai") {
-    if (!apiKey || apiKey.length < 15) return false
+    const [llmResult, sttResult] = await Promise.all([llmValidation, sttValidation]);
 
-    if (provider === "openai") {
-      if (!apiKey.match(/^[A-Za-z0-9_-]+$/)) return false
-
-      try {
-        console.log("Validating OpenAI API key...")
-
-        const response = await fetch("https://api.openai.com/v1/models", {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-
-          const hasGPTModels = data.data && data.data.some((m) => m.id.startsWith("gpt-"))
-          if (hasGPTModels) {
-            console.log("OpenAI API key validation successful")
-            return true
-          } else {
-            console.log("API key valid but no GPT models available")
-            return false
-          }
-        } else {
-          const errorData = await response.json().catch(() => ({}))
-          console.log("API key validation failed:", response.status, errorData.error?.message || "Unknown error")
-          return false
-        }
-      } catch (error) {
-        console.error("API key validation network error:", error)
-        return apiKey.length >= 20 // Fallback for network issues
-      }
-    } else if (provider === "gemini") {
-      // Gemini API keys typically start with 'AIza'
-      if (!apiKey.match(/^[A-Za-z0-9_-]+$/)) return false
-
-      try {
-        console.log("Validating Gemini API key...")
-
-        // Test the API key with a simple models list request
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
-
-        if (response.ok) {
-          const data = await response.json()
-          if (data.models && data.models.length > 0) {
-            console.log("Gemini API key validation successful")
-            return true
-          }
-        }
-
-        console.log("Gemini API key validation failed")
-        return false
-      } catch (error) {
-        console.error("Gemini API key validation network error:", error)
-        return apiKey.length >= 20 // Fallback
-      }
-    } else if (provider === "anthropic") {
-      // Anthropic API keys typically start with 'sk-ant-'
-      if (!apiKey.startsWith("sk-ant-") || !apiKey.match(/^[A-Za-z0-9_-]+$/)) return false
-
-      try {
-        console.log("Validating Anthropic API key...")
-
-        // Test the API key with a simple request
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: "claude-3-haiku-20240307",
-            max_tokens: 10,
-            messages: [{ role: "user", content: "Hi" }],
-          }),
-        })
-
-        if (response.ok || response.status === 400) {
-          // 400 is also acceptable as it means the API key is valid but request format might be wrong
-          console.log("Anthropic API key validation successful")
-          return true
-        }
-
-        console.log("Anthropic API key validation failed:", response.status)
-        return false
-      } catch (error) {
-        console.error("Anthropic API key validation network error:", error)
-        return apiKey.length >= 20 // Fallback
-      }
+    if (llmResult.success && sttResult.success) {
+        console.log('[ApiKeyHeader] handleSubmit: Both LLM and STT keys are valid.');
+        this.startSlideOutAnimation();
+    } else {
+        console.log('[ApiKeyHeader] handleSubmit: Validation failed.');
+        let errorParts = [];
+        if (!llmResult.success) errorParts.push(`LLM Key: ${llmResult.error || 'Invalid'}`);
+        if (!sttResult.success) errorParts.push(`STT Key: ${sttResult.error || 'Invalid'}`);
+        this.errorMessage = errorParts.join(' | ');
     }
 
-    return false
-  }
+    this.isLoading = false;
+    this.requestUpdate();
+}
+//////// after_modelStateService ////////
+
 
   startSlideOutAnimation() {
+    console.log('[ApiKeyHeader] startSlideOutAnimation: Starting slide out animation.');
     this.classList.add("sliding-out")
   }
 
@@ -567,25 +488,18 @@ export class ApiKeyHeader extends LitElement {
     }
   }
 
+
+  //////// after_modelStateService ////////
   handleAnimationEnd(e) {
-    if (e.target !== this) return
-
-    if (this.classList.contains("sliding-out")) {
-      this.classList.remove("sliding-out")
-      this.classList.add("hidden")
-
-      if (this.validatedApiKey) {
-        if (window.require) {
-          window.require("electron").ipcRenderer.invoke("api-key-validated", {
-            apiKey: this.validatedApiKey,
-            provider: this.validatedProvider || "openai",
-          })
-        }
-        this.validatedApiKey = null
-        this.validatedProvider = null
-      }
-    }
+    if (e.target !== this || !this.classList.contains('sliding-out')) return;
+    this.classList.remove("sliding-out");
+    this.classList.add("hidden");
+    window.require('electron').ipcRenderer.invoke('get-current-user').then(userState => {
+        console.log('[ApiKeyHeader] handleAnimationEnd: User state updated:', userState);
+        this.stateUpdateCallback?.(userState);
+    });
   }
+//////// after_modelStateService ////////
 
   connectedCallback() {
     super.connectedCallback()
@@ -598,64 +512,40 @@ export class ApiKeyHeader extends LitElement {
   }
 
   render() {
-    const isButtonDisabled = this.isLoading || !this.apiKey || !this.apiKey.trim()
-    console.log("Rendering with provider:", this.selectedProvider)
+    const isButtonDisabled = this.isLoading || !this.llmApiKey.trim() || !this.sttApiKey.trim();
 
     return html`
-            <div class="container" @mousedown=${this.handleMouseDown}>
-                <button class="close-button" @click=${this.handleClose} title="Close application">
-                    <svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor">
-                        <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.2" />
-                    </svg>
-                </button>
-                <h1 class="title">Choose how to power your AI</h1>
+        <div class="container" @mousedown=${this.handleMouseDown}>
+            <h1 class="title">Enter Your API Keys</h1>
 
-                <div class="form-content">
-                    <div class="error-message">${this.errorMessage}</div>
-                    <div class="provider-label">Select AI Provider:</div>
-                    <select
-                        class="provider-select"
-                        .value=${this.selectedProvider || "openai"}
-                        @change=${this.handleProviderChange}
-                        ?disabled=${this.isLoading}
-                        tabindex="0"
-                    >
-                        <option value="openai" ?selected=${this.selectedProvider === "openai"}>OpenAI</option>
-                        <option value="gemini" ?selected=${this.selectedProvider === "gemini"}>Google Gemini</option>
-                        <option value="anthropic" ?selected=${this.selectedProvider === "anthropic"}>Anthropic</option>
+            <div class="providers-container">
+                <div class="provider-column">
+                    <div class="provider-label"></div>
+                    <select class="provider-select" .value=${this.llmProvider} @change=${e => this.llmProvider = e.target.value} ?disabled=${this.isLoading}>
+                        ${this.providers.llm.map(p => html`<option value=${p.id}>${p.name}</option>`)}
                     </select>
-                    <input
-                        type="password"
-                        class="api-input"
-                        placeholder=${
-                          this.selectedProvider === "openai"
-                            ? "Enter your OpenAI API key"
-                            : this.selectedProvider === "gemini"
-                              ? "Enter your Gemini API key"
-                              : "Enter your Anthropic API key"
-                        }
-                        .value=${this.apiKey || ""}
-                        @input=${this.handleInput}
-                        @keypress=${this.handleKeyPress}
-                        @paste=${this.handlePaste}
-                        @focus=${() => (this.errorMessage = "")}
-                        ?disabled=${this.isLoading}
-                        autocomplete="off"
-                        spellcheck="false"
-                        tabindex="0"
-                    />
+                    <input type="password" class="api-input" placeholder="LLM Provider API Key" .value=${this.llmApiKey} @input=${e => this.llmApiKey = e.target.value} ?disabled=${this.isLoading}>
+                </div>
 
-                    <button class="action-button" @click=${this.handleSubmit} ?disabled=${isButtonDisabled} tabindex="0">
-                        ${this.isLoading ? "Validating..." : "Confirm"}
-                    </button>
-
-                    <div class="or-text">or</div>
-
-                    <button class="action-button" @click=${this.handleUsePicklesKey}>Use Pickle's API Key</button>
+                <div class="provider-column">
+                    <div class="provider-label"></div>
+                    <select class="provider-select" .value=${this.sttProvider} @change=${e => this.sttProvider = e.target.value} ?disabled=${this.isLoading}>
+                        ${this.providers.stt.map(p => html`<option value=${p.id}>${p.name}</option>`)}
+                    </select>
+                    <input type="password" class="api-input" placeholder="STT Provider API Key" .value=${this.sttApiKey} @input=${e => this.sttApiKey = e.target.value} ?disabled=${this.isLoading}>
                 </div>
             </div>
-        `
-  }
+            
+            <div class="error-message">${this.errorMessage}</div>
+
+            <button class="action-button" @click=${this.handleSubmit} ?disabled=${isButtonDisabled}>
+                ${this.isLoading ? "Validating..." : "Confirm"}
+            </button>
+            <div class="or-text">or</div>
+            <button class="action-button" @click=${this.handleUsePicklesKey}>Use Pickle's Key (Login)</button>
+        </div>
+    `;
+}
 }
 
 customElements.define("apikey-header", ApiKeyHeader)

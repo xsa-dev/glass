@@ -971,13 +971,15 @@ function setupIpcHandlers(movementManager) {
         console.log('[WindowManager] Received request to log out.');
         
         await authService.signOut();
-        await setApiKey(null);
+        //////// before_modelStateService ////////
+        // await setApiKey(null);
         
-        windowPool.forEach(win => {
-            if (win && !win.isDestroyed()) {
-                win.webContents.send('api-key-removed');
-            }
-        });
+        // windowPool.forEach(win => {
+        //     if (win && !win.isDestroyed()) {
+        //         win.webContents.send('api-key-removed');
+        //     }
+        // });
+        //////// before_modelStateService ////////
     });
 
     ipcMain.handle('check-system-permissions', async () => {
@@ -1112,95 +1114,150 @@ function setupIpcHandlers(movementManager) {
 }
 
 
-async function setApiKey(apiKey, provider = 'openai') {
-    console.log('[WindowManager] Persisting API key and provider to DB');
+//////// before_modelStateService ////////
+// async function setApiKey(apiKey, provider = 'openai') {
+//     console.log('[WindowManager] Persisting API key and provider to DB');
 
-    try {
-        await userRepository.saveApiKey(apiKey, authService.getCurrentUserId(), provider);
-        console.log('[WindowManager] API key and provider saved to SQLite');
+//     try {
+//         await userRepository.saveApiKey(apiKey, authService.getCurrentUserId(), provider);
+//         console.log('[WindowManager] API key and provider saved to SQLite');
         
-        // Notify authService that the key status may have changed
-        await authService.updateApiKeyStatus();
+//         // Notify authService that the key status may have changed
+//         await authService.updateApiKeyStatus();
 
-    } catch (err) {
-        console.error('[WindowManager] Failed to save API key to SQLite:', err);
-    }
+//     } catch (err) {
+//         console.error('[WindowManager] Failed to save API key to SQLite:', err);
+//     }
 
-    windowPool.forEach(win => {
-        if (win && !win.isDestroyed()) {
-            const js = apiKey ? `
-                localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});
-                localStorage.setItem('ai_provider', ${JSON.stringify(provider)});
-            ` : `
-                localStorage.removeItem('openai_api_key');
-                localStorage.removeItem('ai_provider');
-            `;
-            win.webContents.executeJavaScript(js).catch(() => {});
-        }
-    });
-}
+//     windowPool.forEach(win => {
+//         if (win && !win.isDestroyed()) {
+//             const js = apiKey ? `
+//                 localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});
+//                 localStorage.setItem('ai_provider', ${JSON.stringify(provider)});
+//             ` : `
+//                 localStorage.removeItem('openai_api_key');
+//                 localStorage.removeItem('ai_provider');
+//             `;
+//             win.webContents.executeJavaScript(js).catch(() => {});
+//         }
+//     });
+// }
 
+
+// async function getStoredApiKey() {
+//     const userId = authService.getCurrentUserId();
+//     if (!userId) return null;
+//     const user = await userRepository.getById(userId);
+//     return user?.api_key || null;
+// }
+
+// async function getStoredProvider() {
+//     const userId = authService.getCurrentUserId();
+//     if (!userId) return 'openai';
+//     const user = await userRepository.getById(userId);
+//     return user?.provider || 'openai';
+// }
+
+// function setupApiKeyIPC() {
+//     const { ipcMain } = require('electron');
+
+//     // Both handlers now do the same thing: fetch the key from the source of truth.
+//     ipcMain.handle('get-stored-api-key', getStoredApiKey);
+
+//     ipcMain.handle('api-key-validated', async (event, data) => {
+//         console.log('[WindowManager] API key validation completed, saving...');
+        
+//         // Support both old format (string) and new format (object)
+//         const apiKey = typeof data === 'string' ? data : data.apiKey;
+//         const provider = typeof data === 'string' ? 'openai' : (data.provider || 'openai');
+        
+//         await setApiKey(apiKey, provider);
+
+//         windowPool.forEach((win, name) => {
+//             if (win && !win.isDestroyed()) {
+//                 win.webContents.send('api-key-validated', { apiKey, provider });
+//             }
+//         });
+
+//         return { success: true };
+//     });
+
+//     ipcMain.handle('remove-api-key', async () => {
+//         console.log('[WindowManager] API key removal requested');
+//         await setApiKey(null);
+
+//         windowPool.forEach((win, name) => {
+//             if (win && !win.isDestroyed()) {
+//                 win.webContents.send('api-key-removed');
+//             }
+//         });
+
+//         const settingsWindow = windowPool.get('settings');
+//         if (settingsWindow && settingsWindow.isVisible()) {
+//             settingsWindow.hide();
+//             console.log('[WindowManager] Settings window hidden after clearing API key.');
+//         }
+
+//         return { success: true };
+//     });
+    
+//     ipcMain.handle('get-ai-provider', getStoredProvider);
+
+//     console.log('[WindowManager] API key related IPC handlers registered (SQLite-backed)');
+// }
+//////// before_modelStateService ////////
+
+
+
+
+//////// after_modelStateService ////////
 async function getStoredApiKey() {
-    const userId = authService.getCurrentUserId();
-    if (!userId) return null;
-    const user = await userRepository.getById(userId);
-    return user?.api_key || null;
+    if (global.modelStateService) {
+        const provider = await getStoredProvider();
+        return global.modelStateService.getApiKey(provider);
+    }
+    return null; // Fallback
 }
 
 async function getStoredProvider() {
-    const userId = authService.getCurrentUserId();
-    if (!userId) return 'openai';
-    const user = await userRepository.getById(userId);
-    return user?.provider || 'openai';
+    if (global.modelStateService) {
+        return global.modelStateService.getCurrentProvider('llm');
+    }
+    return 'openai'; // Fallback
+}
+
+/**
+ * 렌더러에서 요청한 타입('llm' 또는 'stt')에 대한 모델 정보를 반환합니다.
+ * @param {IpcMainInvokeEvent} event - 일렉트론 IPC 이벤트 객체
+ * @param {{type: 'llm' | 'stt'}} { type } - 요청할 모델 타입
+ */
+async function getCurrentModelInfo(event, { type }) {
+    if (global.modelStateService && (type === 'llm' || type === 'stt')) {
+        return global.modelStateService.getCurrentModelInfo(type);
+    }
+    return null; // 서비스가 없거나 유효하지 않은 타입일 경우 null 반환
 }
 
 function setupApiKeyIPC() {
     const { ipcMain } = require('electron');
 
-    // Both handlers now do the same thing: fetch the key from the source of truth.
     ipcMain.handle('get-stored-api-key', getStoredApiKey);
+    ipcMain.handle('get-ai-provider', getStoredProvider);
+    ipcMain.handle('get-current-model-info', getCurrentModelInfo);
 
     ipcMain.handle('api-key-validated', async (event, data) => {
-        console.log('[WindowManager] API key validation completed, saving...');
-        
-        // Support both old format (string) and new format (object)
-        const apiKey = typeof data === 'string' ? data : data.apiKey;
-        const provider = typeof data === 'string' ? 'openai' : (data.provider || 'openai');
-        
-        await setApiKey(apiKey, provider);
-
-        windowPool.forEach((win, name) => {
-            if (win && !win.isDestroyed()) {
-                win.webContents.send('api-key-validated', { apiKey, provider });
-            }
-        });
-
+        console.warn("[DEPRECATED] 'api-key-validated' IPC was called. This logic is now handled by 'model:validate-key'.");
         return { success: true };
     });
 
     ipcMain.handle('remove-api-key', async () => {
-        console.log('[WindowManager] API key removal requested');
-        await setApiKey(null);
-
-        windowPool.forEach((win, name) => {
-            if (win && !win.isDestroyed()) {
-                win.webContents.send('api-key-removed');
-            }
-        });
-
-        const settingsWindow = windowPool.get('settings');
-        if (settingsWindow && settingsWindow.isVisible()) {
-            settingsWindow.hide();
-            console.log('[WindowManager] Settings window hidden after clearing API key.');
-        }
-
+         console.warn("[DEPRECATED] 'remove-api-key' IPC was called. This is now handled by 'model:remove-api-key'.");
         return { success: true };
     });
     
-    ipcMain.handle('get-ai-provider', getStoredProvider);
-
-    console.log('[WindowManager] API key related IPC handlers registered (SQLite-backed)');
+    console.log('[WindowManager] API key related IPC handlers have been updated for ModelStateService.');
 }
+//////// after_modelStateService ////////
 
 
 function getDefaultKeybinds() {
@@ -1222,7 +1279,7 @@ function getDefaultKeybinds() {
 }
 
 function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementManager) {
-    console.log('Updating global shortcuts with:', keybinds);
+    // console.log('Updating global shortcuts with:', keybinds);
 
     // Unregister all existing shortcuts
     globalShortcut.unregisterAll();
@@ -1276,7 +1333,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                     movementManager.moveStep(direction);
                 }
             });
-            console.log(`Registered global shortcut: ${key} -> ${direction}`);
+            // console.log(`Registered global shortcut: ${key} -> ${direction}`);
         } catch (error) {
             console.error(`Failed to register ${key}:`, error);
         }
@@ -1316,7 +1373,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                 }
                 mainWindow.webContents.send('click-through-toggled', mouseEventsIgnored);
             });
-            console.log(`Registered toggleClickThrough: ${keybinds.toggleClickThrough}`);
+            // console.log(`Registered toggleClickThrough: ${keybinds.toggleClickThrough}`);
         } catch (error) {
             console.error(`Failed to register toggleClickThrough (${keybinds.toggleClickThrough}):`, error);
         }
@@ -1352,7 +1409,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                     }
                 }
             });
-            console.log(`Registered Ask shortcut (nextStep): ${keybinds.nextStep}`);
+            // console.log(`Registered Ask shortcut (nextStep): ${keybinds.nextStep}`);
         } catch (error) {
             console.error(`Failed to register Ask shortcut (${keybinds.nextStep}):`, error);
         }
@@ -1370,7 +1427,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                     }
                 `);
             });
-            console.log(`Registered manualScreenshot: ${keybinds.manualScreenshot}`);
+            // console.log(`Registered manualScreenshot: ${keybinds.manualScreenshot}`);
         } catch (error) {
             console.error(`Failed to register manualScreenshot (${keybinds.manualScreenshot}):`, error);
         }
@@ -1382,7 +1439,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                 console.log('Previous response shortcut triggered');
                 sendToRenderer('navigate-previous-response');
             });
-            console.log(`Registered previousResponse: ${keybinds.previousResponse}`);
+            // console.log(`Registered previousResponse: ${keybinds.previousResponse}`);
         } catch (error) {
             console.error(`Failed to register previousResponse (${keybinds.previousResponse}):`, error);
         }
@@ -1394,7 +1451,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                 console.log('Next response shortcut triggered');
                 sendToRenderer('navigate-next-response');
             });
-            console.log(`Registered nextResponse: ${keybinds.nextResponse}`);
+            // console.log(`Registered nextResponse: ${keybinds.nextResponse}`);
         } catch (error) {
             console.error(`Failed to register nextResponse (${keybinds.nextResponse}):`, error);
         }
@@ -1406,7 +1463,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                 console.log('Scroll up shortcut triggered');
                 sendToRenderer('scroll-response-up');
             });
-            console.log(`Registered scrollUp: ${keybinds.scrollUp}`);
+            // console.log(`Registered scrollUp: ${keybinds.scrollUp}`);
         } catch (error) {
             console.error(`Failed to register scrollUp (${keybinds.scrollUp}):`, error);
         }
@@ -1418,7 +1475,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                 console.log('Scroll down shortcut triggered');
                 sendToRenderer('scroll-response-down');
             });
-            console.log(`Registered scrollDown: ${keybinds.scrollDown}`);
+            // console.log(`Registered scrollDown: ${keybinds.scrollDown}`);
         } catch (error) {
             console.error(`Failed to register scrollDown (${keybinds.scrollDown}):`, error);
         }
@@ -1495,8 +1552,11 @@ module.exports = {
     createWindows,
     windowPool,
     fixedYPosition,
-    setApiKey,
+    //////// before_modelStateService ////////
+    // setApiKey,
+    //////// before_modelStateService ////////
     getStoredApiKey,
     getStoredProvider,
+    getCurrentModelInfo,
     captureScreenshot,
 };

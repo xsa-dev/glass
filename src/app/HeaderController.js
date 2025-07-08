@@ -15,7 +15,11 @@ class HeaderTransitionManager {
          * @param {'apikey'|'main'|'permission'} type
          */
         this.ensureHeader = (type) => {
-            if (this.currentHeaderType === type) return;
+            console.log('[HeaderController] ensureHeader: Ensuring header of type:', type);
+            if (this.currentHeaderType === type) {
+                console.log('[HeaderController] ensureHeader: Header of type:', type, 'already exists.');
+                return;
+            }
 
             this.headerContainer.innerHTML = '';
             
@@ -26,6 +30,7 @@ class HeaderTransitionManager {
             // Create new header element
             if (type === 'apikey') {
                 this.apiKeyHeader = document.createElement('apikey-header');
+                this.apiKeyHeader.stateUpdateCallback = (userState) => this.handleStateUpdate(userState);
                 this.headerContainer.appendChild(this.apiKeyHeader);
             } else if (type === 'permission') {
                 this.permissionHeader = document.createElement('permission-setup');
@@ -60,6 +65,11 @@ class HeaderTransitionManager {
                     this.apiKeyHeader.isLoading = false;
                 }
             });
+            ipcRenderer.on('force-show-apikey-header', async () => {
+                console.log('[HeaderController] Received broadcast to show apikey header. Switching now.');
+                await this._resizeForApiKey();
+                this.ensureHeader('apikey');
+            });
         }
     }
 
@@ -83,26 +93,30 @@ class HeaderTransitionManager {
         }
     }
 
-    async handleStateUpdate(userState) {
-        const { isLoggedIn, hasApiKey } = userState;
 
-        if (isLoggedIn) {
-            // Firebase user: Check permissions, then show Main or Permission header
-            const permissionResult = await this.checkPermissions();
-            if (permissionResult.success) {
-                this.transitionToMainHeader();
+    //////// after_modelStateService ////////
+    async handleStateUpdate(userState) {
+        const { ipcRenderer } = window.require('electron');
+        const isConfigured = await ipcRenderer.invoke('model:are-providers-configured');
+
+        if (isConfigured) {
+            const { isLoggedIn } = userState;
+            if (isLoggedIn) {
+                const permissionResult = await this.checkPermissions();
+                if (permissionResult.success) {
+                    this.transitionToMainHeader();
+                } else {
+                    this.transitionToPermissionHeader();
+                }
             } else {
-                this.transitionToPermissionHeader();
+                this.transitionToMainHeader();
             }
-        } else if (hasApiKey) {
-            // API Key only user: Skip permission check, go directly to Main
-            this.transitionToMainHeader();
         } else {
-            // No auth at all
             await this._resizeForApiKey();
             this.ensureHeader('apikey');
         }
     }
+    //////// after_modelStateService ////////
 
     async transitionToPermissionHeader() {
         // Prevent duplicate transitions
@@ -159,7 +173,7 @@ class HeaderTransitionManager {
         if (!window.require) return;
         return window
             .require('electron')
-            .ipcRenderer.invoke('resize-header-window', { width: 285, height: 300 })
+            .ipcRenderer.invoke('resize-header-window', { width: 350, height: 300 })
             .catch(() => {});
     }
 

@@ -374,6 +374,43 @@ export class SettingsView extends LitElement {
         .hidden {
             display: none;
         }
+
+        .api-key-section, .model-selection-section {
+            padding: 8px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .provider-key-group, .model-select-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        label {
+            font-size: 11px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.8);
+            margin-left: 2px;
+        }
+        label > strong {
+            color: white;
+            font-weight: 600;
+        }
+        .provider-key-group input {
+            width: 100%; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2);
+            color: white; border-radius: 4px; padding: 5px 8px; font-size: 11px; box-sizing: border-box;
+        }
+        .key-buttons { display: flex; gap: 4px; }
+        .key-buttons .settings-button { flex: 1; padding: 4px; }
+        .model-list {
+            display: flex; flex-direction: column; gap: 2px; max-height: 120px;
+            overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 4px;
+            padding: 4px; margin-top: 4px;
+        }
+        .model-item { padding: 5px 8px; font-size: 11px; border-radius: 3px; cursor: pointer; transition: background-color 0.15s; }
+        .model-item:hover { background-color: rgba(255,255,255,0.1); }
+        .model-item.selected { background-color: rgba(0, 122, 255, 0.4); font-weight: 500; }
             
         /* ────────────────[ GLASS BYPASS ]─────────────── */
         :host-context(body.has-glass) {
@@ -400,70 +437,236 @@ export class SettingsView extends LitElement {
         }
     `;
 
+    //////// before_modelStateService ////////
+    // static properties = {
+    //     firebaseUser: { type: Object, state: true },
+    //     apiKey: { type: String, state: true },
+    //     isLoading: { type: Boolean, state: true },
+    //     isContentProtectionOn: { type: Boolean, state: true },
+    //     settings: { type: Object, state: true },
+    //     presets: { type: Array, state: true },
+    //     selectedPreset: { type: Object, state: true },
+    //     showPresets: { type: Boolean, state: true },
+    //     saving: { type: Boolean, state: true },
+    // };
+    //////// before_modelStateService ////////
+
+    //////// after_modelStateService ////////
     static properties = {
         firebaseUser: { type: Object, state: true },
-        apiKey: { type: String, state: true },
         isLoading: { type: Boolean, state: true },
         isContentProtectionOn: { type: Boolean, state: true },
-        settings: { type: Object, state: true },
+        saving: { type: Boolean, state: true },
+        providerConfig: { type: Object, state: true },
+        apiKeys: { type: Object, state: true },
+        availableLlmModels: { type: Array, state: true },
+        availableSttModels: { type: Array, state: true },
+        selectedLlm: { type: String, state: true },
+        selectedStt: { type: String, state: true },
+        isLlmListVisible: { type: Boolean },
+        isSttListVisible: { type: Boolean },
         presets: { type: Array, state: true },
         selectedPreset: { type: Object, state: true },
         showPresets: { type: Boolean, state: true },
-        saving: { type: Boolean, state: true },
     };
+    //////// after_modelStateService ////////
 
     constructor() {
         super();
+        //////// before_modelStateService ////////
+        // this.firebaseUser = null;
+        // this.apiKey = null;
+        // this.isLoading = false;
+        // this.isContentProtectionOn = true;
+        // this.settings = null;
+        // this.presets = [];
+        // this.selectedPreset = null;
+        // this.showPresets = false;
+        // this.saving = false;
+        // this.loadInitialData();
+        //////// before_modelStateService ////////
+
+        //////// after_modelStateService ////////
         this.firebaseUser = null;
-        this.apiKey = null;
-        this.isLoading = false;
+        this.apiKeys = { openai: '', gemini: '', anthropic: '' };
+        this.providerConfig = {};
+        this.isLoading = true;
         this.isContentProtectionOn = true;
-        this.settings = null;
+        this.saving = false;
+        this.availableLlmModels = [];
+        this.availableSttModels = [];
+        this.selectedLlm = null;
+        this.selectedStt = null;
+        this.isLlmListVisible = false;
+        this.isSttListVisible = false;
         this.presets = [];
         this.selectedPreset = null;
         this.showPresets = false;
-        this.saving = false;
+        this.handleUsePicklesKey = this.handleUsePicklesKey.bind(this)
         this.loadInitialData();
+        //////// after_modelStateService ////////
     }
 
+
+    //////// before_modelStateService ////////
+    // async loadInitialData() {
+    //     if (!window.require) return;
+        
+    //     try {
+    //         this.isLoading = true;
+    //         const { ipcRenderer } = window.require('electron');
+            
+    //         // Load all data in parallel
+    //         const [settings, presets, apiKey, contentProtection, userState] = await Promise.all([
+    //             ipcRenderer.invoke('settings:getSettings'),
+    //             ipcRenderer.invoke('settings:getPresets'),
+    //             ipcRenderer.invoke('get-stored-api-key'),
+    //             ipcRenderer.invoke('get-content-protection-status'),
+    //             ipcRenderer.invoke('get-current-user')
+    //         ]);
+            
+    //         this.settings = settings;
+    //         this.presets = presets || [];
+    //         this.apiKey = apiKey;
+    //         this.isContentProtectionOn = contentProtection;
+            
+    //         // Set first user preset as selected
+    //         if (this.presets.length > 0) {
+    //             const firstUserPreset = this.presets.find(p => p.is_default === 0);
+    //             if (firstUserPreset) {
+    //                 this.selectedPreset = firstUserPreset;
+    //             }
+    //         }
+            
+    //         if (userState && userState.isLoggedIn) {
+    //             this.firebaseUser = userState.user;
+    //         }
+    //     } catch (error) {
+    //         console.error('Error loading initial data:', error);
+    //     } finally {
+    //         this.isLoading = false;
+    //     }
+    // }
+    //////// before_modelStateService ////////
+
+    //////// after_modelStateService ////////
     async loadInitialData() {
         if (!window.require) return;
-        
+        this.isLoading = true;
+        const { ipcRenderer } = window.require('electron');
         try {
-            this.isLoading = true;
-            const { ipcRenderer } = window.require('electron');
-            
-            // Load all data in parallel
-            const [settings, presets, apiKey, contentProtection, userState] = await Promise.all([
-                ipcRenderer.invoke('settings:getSettings'),
+            const [userState, config, storedKeys, availableLlm, availableStt, selectedModels, presets, contentProtection] = await Promise.all([
+                ipcRenderer.invoke('get-current-user'),
+                ipcRenderer.invoke('model:get-provider-config'), // Provider 설정 로드
+                ipcRenderer.invoke('model:get-all-keys'),
+                ipcRenderer.invoke('model:get-available-models', { type: 'llm' }),
+                ipcRenderer.invoke('model:get-available-models', { type: 'stt' }),
+                ipcRenderer.invoke('model:get-selected-models'),
                 ipcRenderer.invoke('settings:getPresets'),
-                ipcRenderer.invoke('get-stored-api-key'),
-                ipcRenderer.invoke('get-content-protection-status'),
-                ipcRenderer.invoke('get-current-user')
+                ipcRenderer.invoke('get-content-protection-status')
             ]);
             
-            this.settings = settings;
+            if (userState && userState.isLoggedIn) this.firebaseUser = userState;
+            this.providerConfig = config;
+            this.apiKeys = storedKeys;
+            this.availableLlmModels = availableLlm;
+            this.availableSttModels = availableStt;
+            this.selectedLlm = selectedModels.llm;
+            this.selectedStt = selectedModels.stt;
             this.presets = presets || [];
-            this.apiKey = apiKey;
             this.isContentProtectionOn = contentProtection;
-            
-            // Set first user preset as selected
             if (this.presets.length > 0) {
                 const firstUserPreset = this.presets.find(p => p.is_default === 0);
-                if (firstUserPreset) {
-                    this.selectedPreset = firstUserPreset;
-                }
-            }
-            
-            if (userState && userState.isLoggedIn) {
-                this.firebaseUser = userState.user;
+                if (firstUserPreset) this.selectedPreset = firstUserPreset;
             }
         } catch (error) {
-            console.error('Error loading initial data:', error);
+            console.error('Error loading initial settings data:', error);
         } finally {
             this.isLoading = false;
         }
     }
+
+    async handleSaveKey(provider) {
+        const input = this.shadowRoot.querySelector(`#key-input-${provider}`);
+        if (!input) return;
+        const key = input.value;
+        this.saving = true;
+
+        const { ipcRenderer } = window.require('electron');
+        const result = await ipcRenderer.invoke('model:validate-key', { provider, key });
+        
+        if (result.success) {
+            this.apiKeys = { ...this.apiKeys, [provider]: key };
+            await this.refreshModelData();
+        } else {
+            alert(`Failed to save ${provider} key: ${result.error}`);
+            input.value = this.apiKeys[provider] || '';
+        }
+        this.saving = false;
+    }
+    
+    async handleClearKey(provider) {
+        this.saving = true;
+        const { ipcRenderer } = window.require('electron');
+        await ipcRenderer.invoke('model:remove-api-key', { provider });
+        this.apiKeys = { ...this.apiKeys, [provider]: '' };
+        await this.refreshModelData();
+        this.saving = false;
+    }
+
+    async refreshModelData() {
+        const { ipcRenderer } = window.require('electron');
+        const [availableLlm, availableStt, selected] = await Promise.all([
+            ipcRenderer.invoke('model:get-available-models', { type: 'llm' }),
+            ipcRenderer.invoke('model:get-available-models', { type: 'stt' }),
+            ipcRenderer.invoke('model:get-selected-models')
+        ]);
+        this.availableLlmModels = availableLlm;
+        this.availableSttModels = availableStt;
+        this.selectedLlm = selected.llm;
+        this.selectedStt = selected.stt;
+        this.requestUpdate();
+    }
+    
+    async toggleModelList(type) {
+        const visibilityProp = type === 'llm' ? 'isLlmListVisible' : 'isSttListVisible';
+
+        if (!this[visibilityProp]) {
+            this.saving = true;
+            this.requestUpdate();
+            
+            await this.refreshModelData();
+
+            this.saving = false;
+        }
+
+        // 데이터 새로고침 후, 목록의 표시 상태를 토글합니다.
+        this[visibilityProp] = !this[visibilityProp];
+        this.requestUpdate();
+    }
+    
+    async selectModel(type, modelId) {
+        this.saving = true;
+        const { ipcRenderer } = window.require('electron');
+        await ipcRenderer.invoke('model:set-selected-model', { type, modelId });
+        if (type === 'llm') this.selectedLlm = modelId;
+        if (type === 'stt') this.selectedStt = modelId;
+        this.isLlmListVisible = false;
+        this.isSttListVisible = false;
+        this.saving = false;
+        this.requestUpdate();
+    }
+
+    handleUsePicklesKey(e) {
+        e.preventDefault()
+        if (this.wasJustDragged) return
+    
+        console.log("Requesting Firebase authentication from main process...")
+        if (window.require) {
+          window.require("electron").ipcRenderer.invoke("start-firebase-auth")
+        }
+      }
+    //////// after_modelStateService ////////
 
     connectedCallback() {
         super.connectedCallback();
@@ -697,6 +900,140 @@ export class SettingsView extends LitElement {
         }
     }
 
+
+    //////// before_modelStateService ////////
+    // render() {
+    //     if (this.isLoading) {
+    //         return html`
+    //             <div class="settings-container">
+    //                 <div class="loading-state">
+    //                     <div class="loading-spinner"></div>
+    //                     <span>Loading...</span>
+    //                 </div>
+    //             </div>
+    //         `;
+    //     }
+
+    //     const loggedIn = !!this.firebaseUser;
+
+    //     return html`
+    //         <div class="settings-container">
+    //             <div class="header-section">
+    //                 <div>
+    //                     <h1 class="app-title">Pickle Glass</h1>
+    //                     <div class="account-info">
+    //                         ${this.firebaseUser
+    //                             ? html`Account: ${this.firebaseUser.email || 'Logged In'}`
+    //                             : this.apiKey && this.apiKey.length > 10
+    //                                 ? html`API Key: ${this.apiKey.substring(0, 6)}...${this.apiKey.substring(this.apiKey.length - 6)}`
+    //                                 : `Account: Not Logged In`
+    //                         }
+    //                     </div>
+    //                 </div>
+    //                 <div class="invisibility-icon ${this.isContentProtectionOn ? 'visible' : ''}" title="Invisibility is On">
+    //                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    //                         <path d="M9.785 7.41787C8.7 7.41787 7.79 8.19371 7.55667 9.22621C7.0025 8.98704 6.495 9.05121 6.11 9.22037C5.87083 8.18204 4.96083 7.41787 3.88167 7.41787C2.61583 7.41787 1.58333 8.46204 1.58333 9.75121C1.58333 11.0404 2.61583 12.0845 3.88167 12.0845C5.08333 12.0845 6.06333 11.1395 6.15667 9.93787C6.355 9.79787 6.87417 9.53537 7.51 9.94954C7.615 11.1454 8.58333 12.0845 9.785 12.0845C11.0508 12.0845 12.0833 11.0404 12.0833 9.75121C12.0833 8.46204 11.0508 7.41787 9.785 7.41787ZM3.88167 11.4195C2.97167 11.4195 2.2425 10.6729 2.2425 9.75121C2.2425 8.82954 2.9775 8.08287 3.88167 8.08287C4.79167 8.08287 5.52083 8.82954 5.52083 9.75121C5.52083 10.6729 4.79167 11.4195 3.88167 11.4195ZM9.785 11.4195C8.875 11.4195 8.14583 10.6729 8.14583 9.75121C8.14583 8.82954 8.875 8.08287 9.785 8.08287C10.695 8.08287 11.43 8.82954 11.43 9.75121C11.43 10.6729 10.6892 11.4195 9.785 11.4195ZM12.6667 5.95954H1V6.83454H12.6667V5.95954ZM8.8925 1.36871C8.76417 1.08287 8.4375 0.931207 8.12833 1.03037L6.83333 1.46204L5.5325 1.03037L5.50333 1.02454C5.19417 0.93704 4.8675 1.10037 4.75083 1.39787L3.33333 5.08454H10.3333L8.91 1.39787L8.8925 1.36871Z" fill="white"/>
+    //                     </svg>
+    //                 </div>
+    //             </div>
+
+    //             <div class="api-key-section">
+    //                 <input 
+    //                     type="password" 
+    //                     id="api-key-input"
+    //                     placeholder="Enter API Key" 
+    //                     .value=${this.apiKey || ''}
+    //                     ?disabled=${loggedIn}
+    //                 >
+    //                 <button class="settings-button full-width" @click=${this.handleSaveApiKey} ?disabled=${loggedIn}>
+    //                     Save API Key
+    //                 </button>
+    //             </div>
+
+    //             <div class="shortcuts-section">
+    //                 ${this.getMainShortcuts().map(shortcut => html`
+    //                     <div class="shortcut-item">
+    //                         <span class="shortcut-name">${shortcut.name}</span>
+    //                         <div class="shortcut-keys">
+    //                             <span class="cmd-key">⌘</span>
+    //                             <span class="shortcut-key">${shortcut.key}</span>
+    //                         </div>
+    //                     </div>
+    //                 `)}
+    //             </div>
+
+    //             <!-- Preset Management Section -->
+    //             <div class="preset-section">
+    //                 <div class="preset-header">
+    //                     <span class="preset-title">
+    //                         My Presets
+    //                         <span class="preset-count">(${this.presets.filter(p => p.is_default === 0).length})</span>
+    //                     </span>
+    //                     <span class="preset-toggle" @click=${this.togglePresets}>
+    //                         ${this.showPresets ? '▼' : '▶'}
+    //                     </span>
+    //                 </div>
+                    
+    //                 <div class="preset-list ${this.showPresets ? '' : 'hidden'}">
+    //                     ${this.presets.filter(p => p.is_default === 0).length === 0 ? html`
+    //                         <div class="no-presets-message">
+    //                             No custom presets yet.<br>
+    //                             <span class="web-link" @click=${this.handlePersonalize}>
+    //                                 Create your first preset
+    //                             </span>
+    //                         </div>
+    //                     ` : this.presets.filter(p => p.is_default === 0).map(preset => html`
+    //                         <div class="preset-item ${this.selectedPreset?.id === preset.id ? 'selected' : ''}"
+    //                              @click=${() => this.handlePresetSelect(preset)}>
+    //                             <span class="preset-name">${preset.title}</span>
+    //                             ${this.selectedPreset?.id === preset.id ? html`<span class="preset-status">Selected</span>` : ''}
+    //                         </div>
+    //                     `)}
+    //                 </div>
+    //             </div>
+
+    //             <div class="buttons-section">
+    //                 <button class="settings-button full-width" @click=${this.handlePersonalize}>
+    //                     <span>Personalize / Meeting Notes</span>
+    //                 </button>
+                    
+    //                 <div class="move-buttons">
+    //                     <button class="settings-button half-width" @click=${this.handleMoveLeft}>
+    //                         <span>← Move</span>
+    //                     </button>
+    //                     <button class="settings-button half-width" @click=${this.handleMoveRight}>
+    //                         <span>Move →</span>
+    //                     </button>
+    //                 </div>
+                    
+    //                 <button class="settings-button full-width" @click=${this.handleToggleInvisibility}>
+    //                     <span>${this.isContentProtectionOn ? 'Disable Invisibility' : 'Enable Invisibility'}</span>
+    //                 </button>
+                    
+    //                 <div class="bottom-buttons">
+    //                     ${this.firebaseUser
+    //                         ? html`
+    //                             <button class="settings-button half-width danger" @click=${this.handleFirebaseLogout}>
+    //                                 <span>Logout</span>
+    //                             </button>
+    //                             `
+    //                         : html`
+    //                             <button class="settings-button half-width danger" @click=${this.handleClearApiKey}>
+    //                                 <span>Clear API Key</span>
+    //                             </button>
+    //                             `
+    //                     }
+    //                     <button class="settings-button half-width danger" @click=${this.handleQuit}>
+    //                         <span>Quit</span>
+    //                     </button>
+    //                 </div>
+    //             </div>
+    //         </div>
+    //     `;
+    // }
+    //////// before_modelStateService ////////
+
+    //////// after_modelStateService ////////
     render() {
         if (this.isLoading) {
             return html`
@@ -711,6 +1048,68 @@ export class SettingsView extends LitElement {
 
         const loggedIn = !!this.firebaseUser;
 
+        const apiKeyManagementHTML = html`
+            <div class="api-key-section">
+                ${Object.entries(this.providerConfig)
+                    .filter(([id, config]) => !id.includes('-glass'))
+                    .map(([id, config]) => html`
+                        <div class="provider-key-group">
+                            <label for="key-input-${id}">${config.name} API Key</label>
+                            <input type="password" id="key-input-${id}"
+                                placeholder=${loggedIn ? "Using Pickle's Key" : `Enter ${config.name} API Key`} 
+                                .value=${this.apiKeys[id] || ''}
+                                
+                            >
+                            <div class="key-buttons">
+                               <button class="settings-button" @click=${() => this.handleSaveKey(id)} >Save</button>
+                               <button class="settings-button danger" @click=${() => this.handleClearKey(id)} }>Clear</button>
+                            </div>
+                        </div>
+                    `)}
+            </div>
+        `;
+        
+        const getModelName = (type, id) => {
+            const models = type === 'llm' ? this.availableLlmModels : this.availableSttModels;
+            const model = models.find(m => m.id === id);
+            return model ? model.name : id;
+        }
+
+        const modelSelectionHTML = html`
+            <div class="model-selection-section">
+                <div class="model-select-group">
+                    <label>LLM Model: <strong>${getModelName('llm', this.selectedLlm) || 'Not Set'}</strong></label>
+                    <button class="settings-button full-width" @click=${() => this.toggleModelList('llm')} ?disabled=${this.saving || this.availableLlmModels.length === 0}>
+                        Change LLM Model
+                    </button>
+                    ${this.isLlmListVisible ? html`
+                        <div class="model-list">
+                            ${this.availableLlmModels.map(model => html`
+                                <div class="model-item ${this.selectedLlm === model.id ? 'selected' : ''}" @click=${() => this.selectModel('llm', model.id)}>
+                                    ${model.name}
+                                </div>
+                            `)}
+                        </div>
+                    ` : ''}
+                </div>
+                <div class="model-select-group">
+                    <label>STT Model: <strong>${getModelName('stt', this.selectedStt) || 'Not Set'}</strong></label>
+                    <button class="settings-button full-width" @click=${() => this.toggleModelList('stt')} ?disabled=${this.saving || this.availableSttModels.length === 0}>
+                        Change STT Model
+                    </button>
+                    ${this.isSttListVisible ? html`
+                        <div class="model-list">
+                            ${this.availableSttModels.map(model => html`
+                                <div class="model-item ${this.selectedStt === model.id ? 'selected' : ''}" @click=${() => this.selectModel('stt', model.id)}>
+                                    ${model.name}
+                                </div>
+                            `)}
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+
         return html`
             <div class="settings-container">
                 <div class="header-section">
@@ -719,9 +1118,7 @@ export class SettingsView extends LitElement {
                         <div class="account-info">
                             ${this.firebaseUser
                                 ? html`Account: ${this.firebaseUser.email || 'Logged In'}`
-                                : this.apiKey && this.apiKey.length > 10
-                                    ? html`API Key: ${this.apiKey.substring(0, 6)}...${this.apiKey.substring(this.apiKey.length - 6)}`
-                                    : `Account: Not Logged In`
+                                : `Account: Not Logged In`
                             }
                         </div>
                     </div>
@@ -732,19 +1129,9 @@ export class SettingsView extends LitElement {
                     </div>
                 </div>
 
-                <div class="api-key-section">
-                    <input 
-                        type="password" 
-                        id="api-key-input"
-                        placeholder="Enter API Key" 
-                        .value=${this.apiKey || ''}
-                        ?disabled=${loggedIn}
-                    >
-                    <button class="settings-button full-width" @click=${this.handleSaveApiKey} ?disabled=${loggedIn}>
-                        Save API Key
-                    </button>
-                </div>
-
+                ${apiKeyManagementHTML}
+                ${modelSelectionHTML}
+                
                 <div class="shortcuts-section">
                     ${this.getMainShortcuts().map(shortcut => html`
                         <div class="shortcut-item">
@@ -757,7 +1144,6 @@ export class SettingsView extends LitElement {
                     `)}
                 </div>
 
-                <!-- Preset Management Section -->
                 <div class="preset-section">
                     <div class="preset-header">
                         <span class="preset-title">
@@ -813,8 +1199,8 @@ export class SettingsView extends LitElement {
                                 </button>
                                 `
                             : html`
-                                <button class="settings-button half-width danger" @click=${this.handleClearApiKey}>
-                                    <span>Clear API Key</span>
+                                <button class="settings-button half-width" @click=${this.handleUsePicklesKey}>
+                                    <span>Login</span>
                                 </button>
                                 `
                         }
@@ -826,6 +1212,7 @@ export class SettingsView extends LitElement {
             </div>
         `;
     }
+    //////// after_modelStateService ////////
 }
 
 customElements.define('settings-view', SettingsView);

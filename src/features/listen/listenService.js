@@ -219,6 +219,20 @@ class ListenService {
             }
         });
 
+        ipcMain.handle('send-system-audio-content', async (event, { data, mimeType }) => {
+            try {
+                await this.sttService.sendSystemAudioContent(data, mimeType);
+                
+                // Send system audio data back to renderer for AEC reference (like macOS does)
+                this.sendToRenderer('system-audio-data', { data });
+                
+                return { success: true };
+            } catch (error) {
+                console.error('Error sending system audio:', error);
+                return { success: false, error: error.message };
+            }
+        });
+
         ipcMain.handle('start-macos-audio', async () => {
             if (process.platform !== 'darwin') {
                 return { success: false, error: 'macOS audio capture only available on macOS' };

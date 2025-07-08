@@ -117,12 +117,10 @@ We have a list of [help wanted](https://github.com/pickle-com/glass/issues?q=is%
 
 | Status | Issue                          | Description                                       |
 |--------|--------------------------------|---------------------------------------------------|
-| 🚧 WIP     | Code Refactoring               | Refactoring the entire codebase for better maintainability. |
 | 🚧 WIP      | Windows Build                  | Make Glass buildable & runnable in Windows |
 | 🚧 WIP      | Local LLM Support                  | Supporting Local LLM to power AI answers |
 | 🚧 WIP     | AEC Improvement                | Transcription is not working occasionally |
 | 🚧 WIP      | Firebase Data Storage Issue    | Session & ask should be saved in firebase for signup users |
-| 🚧 WIP      | Login Issue                    | Currently breaking when switching between local and sign-in mode |
 | 🚧 WIP      | Liquid Glass                    | Liquid Glass UI for MacOS 26 |
 
 ### Changelog

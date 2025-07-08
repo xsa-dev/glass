@@ -1,68 +1,121 @@
-const providers = {
-  openai: require("./providers/openai"),
-  gemini: require("./providers/gemini"),
-  anthropic: require("./providers/anthropic"),
-  // 추가 provider는 여기에 등록
-}
+// factory.js
 
 /**
- * Creates an STT session based on provider
- * @param {string} provider - Provider name ('openai', 'gemini', etc.)
- * @param {object} opts - Configuration options (apiKey, language, callbacks, etc.)
- * @returns {Promise<object>} STT session object with sendRealtimeInput and close methods
+ * @typedef {object} ModelOption
+ * @property {string} id 
+ * @property {string} name
  */
+
+/**
+ * @typedef {object} Provider
+ * @property {string} name
+ * @property {() => any} handler
+ * @property {ModelOption[]} llmModels
+ * @property {ModelOption[]} sttModels
+ */
+
+/**
+ * @type {Object.<string, Provider>}
+ */
+const PROVIDERS = {
+  'openai': {
+      name: 'OpenAI',
+      handler: () => require("./providers/openai"),
+      llmModels: [
+          { id: 'gpt-4.1', name: 'GPT-4.1' },
+      ],
+      sttModels: [
+          { id: 'gpt-4o-mini-transcribe', name: 'GPT-4o Mini Transcribe' }
+      ],
+  },
+
+  'openai-glass': {
+      name: 'OpenAI (Glass)',
+      handler: () => require("./providers/openai"),
+      llmModels: [
+          { id: 'gpt-4.1-glass', name: 'GPT-4.1 (glass)' },
+      ],
+      sttModels: [
+          { id: 'gpt-4o-mini-transcribe-glass', name: 'GPT-4o Mini Transcribe (glass)' }
+      ],
+  },
+  'gemini': {
+      name: 'Gemini',
+      handler: () => require("./providers/gemini"),
+      llmModels: [
+          { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+      ],
+      sttModels: [
+          { id: 'gemini-live-2.5-flash-preview', name: 'Gemini Live 2.5 Flash' }
+      ],
+  },
+  'anthropic': {
+      name: 'Anthropic',
+      handler: () => require("./providers/anthropic"),
+      llmModels: [
+          { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
+      ],
+      sttModels: [],
+  },
+};
+
+function sanitizeModelId(model) {
+  return (typeof model === 'string') ? model.replace(/-glass$/, '') : model;
+}
+
 function createSTT(provider, opts) {
-  if (!providers[provider]?.createSTT) {
-    throw new Error(`STT not supported for provider: ${provider}`)
+  if (provider === 'openai-glass') provider = 'openai';
+  
+  const handler = PROVIDERS[provider]?.handler();
+  if (!handler?.createSTT) {
+      throw new Error(`STT not supported for provider: ${provider}`);
   }
-  return providers[provider].createSTT(opts)
+  if (opts && opts.model) {
+    opts = { ...opts, model: sanitizeModelId(opts.model) };
+  }
+  return handler.createSTT(opts);
 }
 
-/**
- * Creates an LLM instance based on provider
- * @param {string} provider - Provider name ('openai', 'gemini', etc.)
- * @param {object} opts - Configuration options (apiKey, model, temperature, etc.)
- * @returns {object} LLM instance with generateContent method
- */
 function createLLM(provider, opts) {
-  if (!providers[provider]?.createLLM) {
-    throw new Error(`LLM not supported for provider: ${provider}`)
+  if (provider === 'openai-glass') provider = 'openai';
+
+  const handler = PROVIDERS[provider]?.handler();
+  if (!handler?.createLLM) {
+      throw new Error(`LLM not supported for provider: ${provider}`);
   }
-  return providers[provider].createLLM(opts)
+  if (opts && opts.model) {
+    opts = { ...opts, model: sanitizeModelId(opts.model) };
+  }
+  return handler.createLLM(opts);
 }
 
-/**
- * Creates a streaming LLM instance based on provider
- * @param {string} provider - Provider name ('openai', 'gemini', etc.)
- * @param {object} opts - Configuration options (apiKey, model, temperature, etc.)
- * @returns {object} Streaming LLM instance
- */
 function createStreamingLLM(provider, opts) {
-  if (!providers[provider]?.createStreamingLLM) {
-    throw new Error(`Streaming LLM not supported for provider: ${provider}`)
+  if (provider === 'openai-glass') provider = 'openai';
+  
+  const handler = PROVIDERS[provider]?.handler();
+  if (!handler?.createStreamingLLM) {
+      throw new Error(`Streaming LLM not supported for provider: ${provider}`);
   }
-  return providers[provider].createStreamingLLM(opts)
+  if (opts && opts.model) {
+    opts = { ...opts, model: sanitizeModelId(opts.model) };
+  }
+  return handler.createStreamingLLM(opts);
 }
 
-/**
- * Gets list of available providers
- * @returns {object} Object with stt and llm arrays
- */
 function getAvailableProviders() {
-  const sttProviders = []
-  const llmProviders = []
-
-  for (const [name, provider] of Object.entries(providers)) {
-    if (provider.createSTT) sttProviders.push(name)
-    if (provider.createLLM) llmProviders.push(name)
+  const stt = [];
+  const llm = [];
+  for (const [id, provider] of Object.entries(PROVIDERS)) {
+      if (provider.sttModels.length > 0) stt.push(id);
+      if (provider.llmModels.length > 0) llm.push(id);
   }
-
-  return { stt: sttProviders, llm: llmProviders }
+  return { stt: [...new Set(stt)], llm: [...new Set(llm)] };
 }
 
 module.exports = {
+  PROVIDERS,
   createSTT,
   createLLM,
   createStreamingLLM,
   getAvailableProviders,
-}
+};
