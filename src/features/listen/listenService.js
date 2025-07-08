@@ -1,4 +1,4 @@
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, app } = require('electron');
 const SttService = require('./stt/sttService');
 const SummaryService = require('./summary/summaryService');
 const authService = require('../../common/services/authService');
@@ -213,9 +213,9 @@ class ListenService {
             try {
                 await this.sendAudioContent(data, mimeType);
                 return { success: true };
-            } catch (error) {
-                console.error('Error sending user audio:', error);
-                return { success: false, error: error.message };
+            } catch (e) {
+                console.error('Error sending user audio:', e);
+                return { success: false, error: e.message };
             }
         });
 
@@ -237,9 +237,13 @@ class ListenService {
             if (process.platform !== 'darwin') {
                 return { success: false, error: 'macOS audio capture only available on macOS' };
             }
+            if (this.sttService.isMacOSAudioRunning?.()) {
+                return { success: false, error: 'already_running' };
+            }
+
             try {
                 const success = await this.startMacOSAudioCapture();
-                return { success };
+                return { success, error: null };
             } catch (error) {
                 console.error('Error starting macOS audio capture:', error);
                 return { success: false, error: error.message };
@@ -274,4 +278,4 @@ class ListenService {
     }
 }
 
-module.exports = ListenService; 
+module.exports = ListenService;

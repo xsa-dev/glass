@@ -217,6 +217,8 @@ class SttService {
         };
 
         const handleTheirMessage = message => {
+            if (!message || typeof message !== 'object') return;
+
             if (this.modelInfo.provider === 'gemini') {
                 const text = message.serverContent?.inputTranscription?.text || '';
                 if (text && text.trim()) {
