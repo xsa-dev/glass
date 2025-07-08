@@ -82,6 +82,12 @@ export class AssistantView extends LitElement {
             user-select: none;
         }
 
+        /* Allow text selection in insights responses */
+        .insights-container, .insights-container *, .markdown-content {
+            user-select: text !important;
+            cursor: text !important;
+        }
+
         /* highlight.js 스타일 추가 */
         .insights-container pre {
             background: rgba(0, 0, 0, 0.4) !important;
