@@ -117,7 +117,6 @@ We have a list of [help wanted](https://github.com/pickle-com/glass/issues?q=is%
 
 | Status | Issue                          | Description                                       |
 |--------|--------------------------------|---------------------------------------------------|
-| 🚧 WIP     | Code Refactoring               | Refactoring the entire codebase for better maintainability. |
 | 🚧 WIP      | Windows Build                  | Make Glass buildable & runnable in Windows |
 | 🚧 WIP      | Local LLM Support                  | Supporting Local LLM to power AI answers |
 | 🚧 WIP     | AEC Improvement                | Transcription is not working occasionally |
@@ -128,6 +127,10 @@ We have a list of [help wanted](https://github.com/pickle-com/glass/issues?q=is%
 ### Changelog
 
 - Jul 5: Now support Gemini, Intel Mac supported
+- Jul 6: Full code refactoring has done.
+- Jul 7: Now support Claude, LLM/STT model selection
+- Jul 8: Now support Windows(beta), Improved AEC by Rust(to seperate mic/system audio), shortcut editing(beta)
+
 
 
 ## About Pickle
