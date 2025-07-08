@@ -320,14 +320,20 @@ class SttService {
     }
 
     async sendSystemAudioContent(data, mimeType) {
-        const provider = await this.getAiProvider();
-        const isGemini = provider === 'gemini';
-
         if (!this.theirSttSession) {
             throw new Error('Their STT session not active');
         }
 
-        const payload = isGemini
+        let modelInfo = this.modelInfo;
+        if (!modelInfo) {
+            console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
+            modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
+        }
+        if (!modelInfo) {
+            throw new Error('STT model info could not be retrieved.');
+        }
+
+        const payload = modelInfo.provider === 'gemini'
             ? { audio: { data, mimeType: mimeType || 'audio/pcm;rate=24000' } }
             : data;
         
