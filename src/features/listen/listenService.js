@@ -117,8 +117,27 @@ class ListenService {
                 throw new Error('Failed to initialize database session');
             }
 
-            // Initialize STT sessions
-            await this.sttService.initializeSttSessions(language);
+            /* ---------- STT Initialization Retry Logic ---------- */
+            const MAX_RETRY = 10;
+            const RETRY_DELAY_MS = 300;   // 0.3 seconds
+
+            let sttReady = false;
+            for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+                try {
+                    await this.sttService.initializeSttSessions(language);
+                    sttReady = true;
+                    break;                         // Exit on success
+                } catch (err) {
+                    console.warn(
+                        `[ListenService] STT init attempt ${attempt} failed: ${err.message}`
+                    );
+                    if (attempt < MAX_RETRY) {
+                        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+                    }
+                }
+            }
+            if (!sttReady) throw new Error('STT init failed after retries');
+            /* ------------------------------------------- */
 
             console.log('✅ Listen service initialized successfully.');
             
