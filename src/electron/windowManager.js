@@ -76,6 +76,7 @@ function updateLayout() {
 }
 
 let movementManager = null;
+const windowBridge = require('../bridge/windowBridge');
 
 
 async function toggleFeature(featureName) {

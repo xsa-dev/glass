@@ -373,56 +373,7 @@ function initialize() {
     // cleanup 
     windowNotificationManager.cleanup();
     
-    // IPC handlers for settings
-    ipcMain.handle('settings:getSettings', async () => {
-        return await getSettings();
-    });
-    
-    ipcMain.handle('settings:saveSettings', async (event, settings) => {
-        return await saveSettings(settings);
-    });
-    
-    // IPC handlers for presets
-    ipcMain.handle('settings:getPresets', async () => {
-        return await getPresets();
-    });
-    
-    ipcMain.handle('settings:getPresetTemplates', async () => {
-        return await getPresetTemplates();
-    });
-    
-    ipcMain.handle('settings:createPreset', async (event, title, prompt) => {
-        return await createPreset(title, prompt);
-    });
-    
-    ipcMain.handle('settings:updatePreset', async (event, id, title, prompt) => {
-        return await updatePreset(id, title, prompt);
-    });
-    
-    ipcMain.handle('settings:deletePreset', async (event, id) => {
-        return await deletePreset(id);
-    });
-    
-    ipcMain.handle('settings:saveApiKey', async (event, apiKey, provider) => {
-        return await saveApiKey(apiKey, provider);
-    });
-    
-    ipcMain.handle('settings:removeApiKey', async () => {
-        return await removeApiKey();
-    });
-    
-    ipcMain.handle('settings:updateContentProtection', async (event, enabled) => {
-        return await updateContentProtection(enabled);
-    });
-
-    ipcMain.handle('settings:get-auto-update', async () => {
-        return await getAutoUpdateSetting();
-    });
-
-    ipcMain.handle('settings:set-auto-update', async (event, isEnabled) => {
-        console.log('[SettingsService] Setting auto update setting:', isEnabled);
-        return await setAutoUpdateSetting(isEnabled);
-    });
+    // IPC handlers 제거 (featureBridge로 이동)
     
     console.log('[SettingsService] Initialized and ready.');
 }

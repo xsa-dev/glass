@@ -27,6 +27,7 @@ const settingsService = require('./features/settings/settingsService');
 const sessionRepository = require('./common/repositories/session');
 const ModelStateService = require('./common/services/modelStateService');
 const sqliteClient = require('./common/services/sqliteClient');
+const featureBridge = require('./bridge/featureBridge');
 
 // Global variables
 const eventBridge = new EventEmitter();
@@ -205,6 +206,7 @@ app.whenReady().then(async () => {
         listenService.setupIpcHandlers();
         askService.initialize();
         settingsService.initialize();
+        featureBridge.initialize();  // 추가: featureBridge 초기화
         setupGeneralIpcHandlers();
         setupOllamaIpcHandlers();
         setupWhisperIpcHandlers();
