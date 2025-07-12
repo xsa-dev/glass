@@ -193,8 +193,6 @@ class ListenService {
             this.currentSessionId = null;
             this.summaryService.resetConversationHistory();
 
-            this.sendToRenderer('session-did-close');
-
             console.log('Listen service session closed.');
             return { success: true };
         } catch (error) {

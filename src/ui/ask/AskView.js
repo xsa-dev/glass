@@ -729,23 +729,107 @@ export class AskView extends LitElement {
         this.handleStreamChunk = this.handleStreamChunk.bind(this);
         this.handleStreamEnd = this.handleStreamEnd.bind(this);
         this.handleSendText = this.handleSendText.bind(this);
-        this.handleGlobalSendRequest = this.handleGlobalSendRequest.bind(this);
         this.handleTextKeydown = this.handleTextKeydown.bind(this);
-        this.closeResponsePanel = this.closeResponsePanel.bind(this);
         this.handleCopy = this.handleCopy.bind(this);
         this.clearResponseContent = this.clearResponseContent.bind(this);
-        this.processAssistantQuestion = this.processAssistantQuestion.bind(this);
         this.handleEscKey = this.handleEscKey.bind(this);
-        this.handleDocumentClick = this.handleDocumentClick.bind(this);
-        this.handleWindowBlur = this.handleWindowBlur.bind(this);
-
         this.handleScroll = this.handleScroll.bind(this);
+        this.handleCloseAskWindow = this.handleCloseAskWindow.bind(this);
+        this.handleCloseIfNoContent = this.handleCloseIfNoContent.bind(this);
 
         this.loadLibraries();
 
         // --- Resize helpers ---
         this.isThrottled = false;
     }
+
+    connectedCallback() {
+        super.connectedCallback();
+
+        console.log('📱 AskView connectedCallback - IPC 이벤트 리스너 설정');
+
+        document.addEventListener('keydown', this.handleEscKey);
+
+        this.resizeObserver = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                const needed = entry.contentRect.height;
+                const current = window.innerHeight;
+
+                if (needed > current - 4) {
+                    this.requestWindowResize(Math.ceil(needed));
+                }
+            }
+        });
+
+        const container = this.shadowRoot?.querySelector('.ask-container');
+        if (container) this.resizeObserver.observe(container);
+
+        this.handleQuestionFromAssistant = (event, question) => {
+            console.log('📨 AskView: Received question from ListenView:', question);
+            this.handleSendText(null, question);
+        };
+
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.on('ask:sendQuestionToRenderer', this.handleQuestionFromAssistant);
+            ipcRenderer.on('hide-text-input', () => {
+                console.log('📤 Hide text input signal received');
+                this.showTextInput = false;
+                this.requestUpdate();
+            });
+            ipcRenderer.on('ask:showTextInput', () => {
+                console.log('📤 Show text input signal received');
+                if (!this.showTextInput) {
+                    this.showTextInput = true;
+                    this.requestUpdate();
+                }
+            });
+
+            ipcRenderer.on('ask-response-chunk', this.handleStreamChunk);
+            ipcRenderer.on('ask-response-stream-end', this.handleStreamEnd);
+
+            ipcRenderer.on('scroll-response-up', () => this.handleScroll('up'));
+            ipcRenderer.on('scroll-response-down', () => this.handleScroll('down'));
+            console.log('✅ AskView: IPC 이벤트 리스너 등록 완료');
+        }
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        this.resizeObserver?.disconnect();
+
+        console.log('📱 AskView disconnectedCallback - IPC 이벤트 리스너 제거');
+
+        document.removeEventListener('keydown', this.handleEscKey);
+
+        if (this.copyTimeout) {
+            clearTimeout(this.copyTimeout);
+        }
+
+        if (this.headerAnimationTimeout) {
+            clearTimeout(this.headerAnimationTimeout);
+        }
+
+        if (this.streamingTimeout) {
+            clearTimeout(this.streamingTimeout);
+        }
+
+        Object.values(this.lineCopyTimeouts).forEach(timeout => clearTimeout(timeout));
+
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.removeListener('hide-text-input', () => { });
+            ipcRenderer.removeListener('ask:showTextInput', () => { });
+
+            ipcRenderer.removeListener('ask-response-chunk', this.handleStreamChunk);
+            ipcRenderer.removeListener('ask-response-stream-end', this.handleStreamEnd);
+
+            ipcRenderer.removeListener('scroll-response-up', () => this.handleScroll('up'));
+            ipcRenderer.removeListener('scroll-response-down', () => this.handleScroll('down'));
+            console.log('✅ AskView: IPC 이벤트 리스너 제거 완료');
+        }
+    }
+
 
     async loadLibraries() {
         try {
@@ -803,38 +887,49 @@ export class AskView extends LitElement {
         }
     }
 
-    handleDocumentClick(e) {
+    handleCloseAskWindow() {
+        this.clearResponseContent();
+        ipcRenderer.invoke('ask:closeAskWindow');
+    }
+
+    handleCloseIfNoContent() {
         if (!this.currentResponse && !this.isLoading && !this.isStreaming) {
-            const askContainer = this.shadowRoot?.querySelector('.ask-container');
-            if (askContainer && !e.composedPath().includes(askContainer)) {
-                this.closeIfNoContent();
-            }
+            this.handleCloseAskWindow();
         }
     }
 
     handleEscKey(e) {
         if (e.key === 'Escape') {
             e.preventDefault();
-            this.closeResponsePanel();
+            this.handleCloseIfNoContent();
         }
     }
 
-    handleWindowBlur() {
-        if (!this.currentResponse && !this.isLoading && !this.isStreaming) {
-            // If there's no active content, ask the main process to close this window.
-            if (window.require) {
-                const { ipcRenderer } = window.require('electron');
-                ipcRenderer.invoke('close-ask-window-if-empty');
+    clearResponseContent() {
+        this.currentResponse = '';
+        this.currentQuestion = '';
+        this.isLoading = false;
+        this.isStreaming = false;
+        this.headerText = 'AI Response';
+        this.showTextInput = true;
+        this.accumulatedResponse = '';
+        this.requestUpdate();
+        this.renderContent();
+    }
+
+    handleInputFocus() {
+        this.isInputFocused = true;
+    }
+
+    focusTextInput() {
+        requestAnimationFrame(() => {
+            const textInput = this.shadowRoot?.getElementById('textInput');
+            if (textInput) {
+                textInput.focus();
             }
-        }
+        });
     }
 
-    closeIfNoContent() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('force-close-window', 'ask');
-        }
-    }
 
     loadScript(src) {
         return new Promise((resolve, reject) => {
@@ -872,114 +967,6 @@ export class AskView extends LitElement {
         }
 
         return text;
-    }
-
-    connectedCallback() {
-        super.connectedCallback();
-
-        console.log('📱 AskView connectedCallback - IPC 이벤트 리스너 설정');
-
-        document.addEventListener('click', this.handleDocumentClick, true);
-        document.addEventListener('keydown', this.handleEscKey);
-
-        this.resizeObserver = new ResizeObserver(entries => {
-            for (const entry of entries) {
-                const needed = entry.contentRect.height;
-                const current = window.innerHeight;
-
-                if (needed > current - 4) {
-                    this.requestWindowResize(Math.ceil(needed));
-                }
-            }
-        });
-
-        const container = this.shadowRoot?.querySelector('.ask-container');
-        if (container) this.resizeObserver.observe(container);
-
-        this.handleQuestionFromAssistant = (event, question) => {
-            console.log('📨 AskView: Received question from ListenView:', question);
-            this.currentResponse = '';
-            this.isStreaming = false;
-            this.requestUpdate();
-
-            this.currentQuestion = question;
-            this.isLoading = true;
-            this.showTextInput = false;
-            this.headerText = 'analyzing screen...';
-            this.startHeaderAnimation();
-            this.requestUpdate();
-
-            this.processAssistantQuestion(question);
-        };
-
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.on('ask-global-send', this.handleGlobalSendRequest);
-            ipcRenderer.on('receive-question-from-assistant', this.handleQuestionFromAssistant);
-            ipcRenderer.on('hide-text-input', () => {
-                console.log('📤 Hide text input signal received');
-                this.showTextInput = false;
-                this.requestUpdate();
-            });
-            ipcRenderer.on('window-hide-animation', () => {
-                console.log('📤 Ask window hiding - clearing response content');
-                setTimeout(() => {
-                    this.clearResponseContent();
-                }, 250);
-            });
-            ipcRenderer.on('window-blur', this.handleWindowBlur);
-            ipcRenderer.on('window-did-show', () => {
-                if (!this.currentResponse && !this.isLoading && !this.isStreaming) {
-                    this.focusTextInput();
-                }
-            });
-
-            ipcRenderer.on('ask-response-chunk', this.handleStreamChunk);
-            ipcRenderer.on('ask-response-stream-end', this.handleStreamEnd);
-
-            ipcRenderer.on('scroll-response-up', () => this.handleScroll('up'));
-            ipcRenderer.on('scroll-response-down', () => this.handleScroll('down'));
-            console.log('✅ AskView: IPC 이벤트 리스너 등록 완료');
-        }
-    }
-
-    disconnectedCallback() {
-        super.disconnectedCallback();
-        this.resizeObserver?.disconnect();
-
-        console.log('📱 AskView disconnectedCallback - IPC 이벤트 리스너 제거');
-
-        document.removeEventListener('click', this.handleDocumentClick, true);
-        document.removeEventListener('keydown', this.handleEscKey);
-
-        if (this.copyTimeout) {
-            clearTimeout(this.copyTimeout);
-        }
-
-        if (this.headerAnimationTimeout) {
-            clearTimeout(this.headerAnimationTimeout);
-        }
-
-        if (this.streamingTimeout) {
-            clearTimeout(this.streamingTimeout);
-        }
-
-        Object.values(this.lineCopyTimeouts).forEach(timeout => clearTimeout(timeout));
-
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeListener('ask-global-send', this.handleGlobalSendRequest);
-            ipcRenderer.removeListener('hide-text-input', () => { });
-            ipcRenderer.removeListener('window-hide-animation', () => { });
-            ipcRenderer.removeListener('window-blur', this.handleWindowBlur);
-
-            ipcRenderer.removeListener('ask-response-chunk', this.handleStreamChunk);
-            ipcRenderer.removeListener('ask-response-stream-end', this.handleStreamEnd);
-
-            ipcRenderer.removeListener('scroll-response-up', () => this.handleScroll('up'));
-            ipcRenderer.removeListener('scroll-response-down', () => this.handleScroll('down'));
-            console.log('✅ AskView: IPC 이벤트 리스너 제거 완료');
-        }
     }
 
     handleScroll(direction) {
@@ -1124,18 +1111,6 @@ export class AskView extends LitElement {
         this.adjustWindowHeightThrottled();
     }
 
-    clearResponseContent() {
-        this.currentResponse = '';
-        this.currentQuestion = '';
-        this.isLoading = false;
-        this.isStreaming = false;
-        this.headerText = 'AI Response';
-        this.showTextInput = true;
-        this.accumulatedResponse = '';
-        this.requestUpdate();
-        this.renderContent(); // 👈 updateResponseContent() 대신 renderContent() 호출
-    }
-
 
     requestWindowResize(targetHeight) {
         if (window.require) {
@@ -1180,13 +1155,6 @@ export class AskView extends LitElement {
             .replace(/`(.*?)`/g, '<code>$1</code>');
     }
 
-    closeResponsePanel() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('force-close-window', 'ask');
-        }
-    }
-
     fixIncompleteMarkdown(text) {
         if (!text) return text;
 
@@ -1224,29 +1192,6 @@ export class AskView extends LitElement {
         return text;
     }
 
-    // ✨ processAssistantQuestion 수정
-    async processAssistantQuestion(question) {
-        this.currentQuestion = question;
-        this.showTextInput = false;
-        this.isLoading = true;
-        this.isStreaming = false;
-        this.currentResponse = '';
-        this.accumulatedResponse = '';
-        this.startHeaderAnimation();
-        this.requestUpdate();
-        this.renderContent();
-
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('ask:sendMessage', question).catch(error => {
-                console.error('Error processing assistant question:', error);
-                this.isLoading = false;
-                this.isStreaming = false;
-                this.currentResponse = `Error: ${error.message}`;
-                this.renderContent();
-            });
-        }
-    }
 
     async handleCopy() {
         if (this.copyState === 'copied') return;
@@ -1316,10 +1261,9 @@ export class AskView extends LitElement {
         }
     }
 
-    async handleSendText() {
+    async handleSendText(e, overridingText = '') {
         const textInput = this.shadowRoot?.getElementById('textInput');
-        if (!textInput) return;
-        const text = textInput.value.trim();
+        const text = (overridingText || textInput?.value || '').trim();
         if (!text) return;
 
         textInput.value = '';
@@ -1377,37 +1321,10 @@ export class AskView extends LitElement {
         }
     }
 
-    focusTextInput() {
-        requestAnimationFrame(() => {
-            const textInput = this.shadowRoot?.getElementById('textInput');
-            if (textInput) {
-                textInput.focus();
-            }
-        });
-    }
-
     firstUpdated() {
         setTimeout(() => this.adjustWindowHeight(), 200);
     }
 
-    handleGlobalSendRequest() {
-        const textInput = this.shadowRoot?.getElementById('textInput');
-
-        if (!this.showTextInput) {
-            this.showTextInput = true;
-            this.requestUpdate();
-            this.focusTextInput();
-            return;
-        }
-
-        if (!textInput) return;
-
-        textInput.focus();
-
-        if (!textInput.value.trim()) return;
-
-        this.handleSendText();
-    }
 
     getTruncatedQuestion(question, maxLength = 30) {
         if (!question) return '';
@@ -1415,24 +1332,7 @@ export class AskView extends LitElement {
         return question.substring(0, maxLength) + '...';
     }
 
-    handleInputFocus() {
-        this.isInputFocused = true;
-    }
 
-    handleInputBlur(e) {
-        this.isInputFocused = false;
-
-        // 잠시 후 포커스가 다른 곳으로 갔는지 확인
-        setTimeout(() => {
-            const activeElement = this.shadowRoot?.activeElement || document.activeElement;
-            const textInput = this.shadowRoot?.getElementById('textInput');
-
-            // 포커스가 AskView 내부가 아니고, 응답이 없는 경우
-            if (!this.currentResponse && !this.isLoading && !this.isStreaming && activeElement !== textInput && !this.isInputFocused) {
-                this.closeIfNoContent();
-            }
-        }, 200);
-    }
 
     render() {
         const hasResponse = this.isLoading || this.currentResponse || this.isStreaming;
@@ -1470,7 +1370,7 @@ export class AskView extends LitElement {
                                     <path d="M20 6L9 17l-5-5" />
                                 </svg>
                             </button>
-                            <button class="close-button" @click=${this.closeResponsePanel}>
+                            <button class="close-button" @click=${this.handleCloseAskWindow}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <line x1="18" y1="6" x2="6" y2="18" />
                                     <line x1="6" y1="6" x2="18" y2="18" />
@@ -1493,7 +1393,6 @@ export class AskView extends LitElement {
                         placeholder="Ask about your screen or audio"
                         @keydown=${this.handleTextKeydown}
                         @focus=${this.handleInputFocus}
-                        @blur=${this.handleInputBlur}
                     />
                     <button
                         class="submit-btn"

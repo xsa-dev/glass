@@ -76,8 +76,16 @@ function updateLayout() {
 let movementManager = null;
 const windowBridge = require('../bridge/windowBridge');
 
-
-async function toggleFeature(featureName) {
+/**
+ * 
+ * @param {'listen'|'ask'|'settings'} featureName
+ * @param {{
+*   listen?:   { targetVisibility?: 'show'|'hide' },
+*   ask?:      { targetVisibility?: 'show'|'hide', questionText?: string },
+*   settings?: { targetVisibility?: 'show'|'hide' }
+* }} [options={}]
+*/
+async function toggleFeature(featureName, options = {}) {
     if (!windowPool.get(featureName) && currentHeaderState === 'main') {
         createFeatureWindows(windowPool.get('header'));
     }
@@ -117,14 +125,27 @@ async function toggleFeature(featureName) {
             return;
         }
 
+        const questionText = options?.ask?.questionText ?? null;
+        const targetVisibility = options?.ask?.targetVisibility ?? null;
         if (askWindow.isVisible()) {
-            askWindow.webContents.send('ask-global-send');
+            if (questionText) {
+                askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
+            } else {
+                updateLayout();
+                if (targetVisibility === 'show') {
+                    askWindow.webContents.send('ask:showTextInput');
+                } else {
+                    askWindow.webContents.send('window-hide-animation');
+                }
+            }
         } else {
             console.log('[WindowManager] Showing hidden Ask window');
             askWindow.show();
             updateLayout();
+            if (questionText) {
+                askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
+            }
             askWindow.webContents.send('window-show-animation');
-            askWindow.webContents.send('window-did-show');
         }
     }
 
@@ -238,8 +259,6 @@ function createFeatureWindows(header, namesToCreate) {
                         }
                     });
                 }
-
-                ask.on('blur',()=>ask.webContents.send('window-blur'));
                 
                 // Open DevTools in development
                 if (!app.isPackaged) {
@@ -532,61 +551,6 @@ function createWindows() {
         updateLayout();
     });
 
-    ipcMain.handle('toggle-all-windows-visibility', () => toggleAllWindowsVisibility());
-
-    ipcMain.handle('toggle-feature', async (event, featureName) => {
-        return toggleFeature(featureName);
-    });
-
-    ipcMain.handle('send-question-to-ask', (event, question) => {
-        const askWindow = windowPool.get('ask');
-        if (askWindow && !askWindow.isDestroyed()) {
-            console.log('📨 Main process: Sending question to AskView', question);
-            askWindow.webContents.send('receive-question-from-assistant', question);
-            return { success: true };
-        } else {
-            console.error('❌ Cannot find AskView window');
-            return { success: false, error: 'AskView window not found' };
-        }
-    });
-
-    ipcMain.handle('adjust-window-height', (event, targetHeight) => {
-        const senderWindow = BrowserWindow.fromWebContents(event.sender);
-        if (senderWindow) {
-            const wasResizable = senderWindow.isResizable();
-            if (!wasResizable) {
-                senderWindow.setResizable(true);
-            }
-
-            const currentBounds = senderWindow.getBounds();
-            const minHeight = senderWindow.getMinimumSize()[1];
-            const maxHeight = senderWindow.getMaximumSize()[1];
-            
-            let adjustedHeight;
-            if (maxHeight === 0) {
-                adjustedHeight = Math.max(minHeight, targetHeight);
-            } else {
-                adjustedHeight = Math.max(minHeight, Math.min(maxHeight, targetHeight));
-            }
-            
-            senderWindow.setSize(currentBounds.width, adjustedHeight, false);
-
-            if (!wasResizable) {
-                senderWindow.setResizable(false);
-            }
-
-            updateLayout();
-        }
-    });
-
-    ipcMain.on('session-did-close', () => {
-        const listenWindow = windowPool.get('listen');
-        if (listenWindow && listenWindow.isVisible()) {
-            console.log('[WindowManager] Session closed, hiding listen window.');
-            listenWindow.hide();
-        }
-    });
-
     return windowPool;
 }
 
@@ -617,6 +581,12 @@ function loadAndRegisterShortcuts(movementManager) {
 
 
 function setupIpcHandlers(movementManager) {
+    setupApiKeyIPC();
+
+    ipcMain.handle('quit-application', () => {
+        app.quit();
+    });
+
     screen.on('display-added', (event, newDisplay) => {
         console.log('[Display] New display added:', newDisplay.id);
     });
@@ -631,106 +601,9 @@ function setupIpcHandlers(movementManager) {
     });
 
     screen.on('display-metrics-changed', (event, display, changedMetrics) => {
-        console.log('[Display] Display metrics changed:', display.id, changedMetrics);
+        // console.log('[Display] Display metrics changed:', display.id, changedMetrics);
         updateLayout();
     });
-
-    // 1. 스트리밍 데이터 조각(chunk)을 받아서 ask 창으로 전달
-    ipcMain.on('ask-response-chunk', (event, { token }) => {
-        const askWindow = windowPool.get('ask');
-        if (askWindow && !askWindow.isDestroyed()) {
-            // renderer.js가 보낸 토큰을 AskView.js로 그대로 전달합니다.
-            askWindow.webContents.send('ask-response-chunk', { token });
-        }
-    });
-
-    // 2. 스트리밍 종료 신호를 받아서 ask 창으로 전달
-    ipcMain.on('ask-response-stream-end', () => {
-        const askWindow = windowPool.get('ask');
-        if (askWindow && !askWindow.isDestroyed()) {
-            askWindow.webContents.send('ask-response-stream-end');
-        }
-    });
-
-    ipcMain.on('animation-finished', (event) => {
-        const win = BrowserWindow.fromWebContents(event.sender);
-        if (win && !win.isDestroyed()) {
-            console.log(`[WindowManager] Hiding window after animation.`);
-            win.hide();
-        }
-    });
-
-    ipcMain.on('show-settings-window', (event, bounds) => {
-        if (!bounds) return;  
-        const win = windowPool.get('settings');
-
-        if (win && !win.isDestroyed()) {
-            if (settingsHideTimer) {
-                clearTimeout(settingsHideTimer);
-                settingsHideTimer = null;
-            }
-
-            // Adjust position based on button bounds
-            const header = windowPool.get('header');
-            const headerBounds = header?.getBounds() ?? { x: 0, y: 0 };
-            const settingsBounds = win.getBounds();
-
-            const disp = getCurrentDisplay(header);
-            const { x: waX, y: waY, width: waW, height: waH } = disp.workArea;
-
-            let x = Math.round(headerBounds.x + (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2 - settingsBounds.width / 2);
-            let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 31);
-
-            x = Math.max(waX + 10, Math.min(waX + waW - settingsBounds.width - 10, x));
-            y = Math.max(waY + 10, Math.min(waY + waH - settingsBounds.height - 10, y));
-
-            win.setBounds({ x, y });
-            win.__lockedByButton = true;
-            console.log(`[WindowManager] Positioning settings window at (${x}, ${y}) based on button bounds.`);
-            
-            win.show();
-            win.moveTop();
-            win.setAlwaysOnTop(true);
-        }
-    });
-
-    ipcMain.on('hide-settings-window', (event) => {
-        const window = windowPool.get("settings");
-        if (window && !window.isDestroyed()) {
-            if (settingsHideTimer) {
-                clearTimeout(settingsHideTimer);
-            }
-            settingsHideTimer = setTimeout(() => {
-                if (window && !window.isDestroyed()) {
-                    window.setAlwaysOnTop(false);
-                    window.hide();
-                }
-                settingsHideTimer = null;
-            }, 200);
-            
-            window.__lockedByButton = false;
-        }
-    });
-
-    ipcMain.on('cancel-hide-settings-window', (event) => {
-        if (settingsHideTimer) {
-            clearTimeout(settingsHideTimer);
-            settingsHideTimer = null;
-        }
-    });
-
-    ipcMain.handle('quit-application', () => {
-        app.quit();
-    });
-
-    ipcMain.handle('is-ask-window-visible', (event, windowName) => {
-        const window = windowPool.get(windowName);
-        if (window && !window.isDestroyed()) {
-            return window.isVisible();
-        }
-        return false;
-    });
-
 
     ipcMain.handle('toggle-content-protection', () => {
         isContentProtectionOn = !isContentProtectionOn;
@@ -826,8 +699,6 @@ function setupIpcHandlers(movementManager) {
         shell.openExternal(personalizeUrl);
         console.log('Opening personalization page:', personalizeUrl);
     });
-
-    setupApiKeyIPC();
 
 
     ipcMain.handle('resize-header-window', (event, { width, height }) => {
@@ -952,12 +823,32 @@ function setupIpcHandlers(movementManager) {
         }
     });
 
-    ipcMain.handle('force-close-window', (event, windowName) => {
-        const window = windowPool.get(windowName);
-        if (window && !window.isDestroyed()) {
-            console.log(`[WindowManager] Force closing window: ${windowName}`);
+    ipcMain.handle('adjust-window-height', (event, targetHeight) => {
+        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        if (senderWindow) {
+            const wasResizable = senderWindow.isResizable();
+            if (!wasResizable) {
+                senderWindow.setResizable(true);
+            }
 
-            window.webContents.send('window-hide-animation');
+            const currentBounds = senderWindow.getBounds();
+            const minHeight = senderWindow.getMinimumSize()[1];
+            const maxHeight = senderWindow.getMaximumSize()[1];
+            
+            let adjustedHeight;
+            if (maxHeight === 0) {
+                adjustedHeight = Math.max(minHeight, targetHeight);
+            } else {
+                adjustedHeight = Math.max(minHeight, Math.min(maxHeight, targetHeight));
+            }
+            
+            senderWindow.setSize(currentBounds.width, adjustedHeight, false);
+
+            if (!wasResizable) {
+                senderWindow.setResizable(false);
+            }
+
+            updateLayout();
         }
     });
 
@@ -1140,12 +1031,94 @@ function setupIpcHandlers(movementManager) {
             return false;
         }
     });
+    
+    ipcMain.handle('toggle-all-windows-visibility', () => toggleAllWindowsVisibility());
 
-    ipcMain.handle('close-ask-window-if-empty', async () => {
-        const askWindow = windowPool.get('ask');
-        if (askWindow && !askWindow.isFocused()) {
-            askWindow.hide();
+    ipcMain.handle('toggle-feature', async (event, featureName) => {
+        return toggleFeature(featureName);
+    });
+
+    ipcMain.on('animation-finished', (event) => {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        if (win && !win.isDestroyed()) {
+            console.log(`[WindowManager] Hiding window after animation.`);
+            win.hide();
         }
+    });
+
+    ipcMain.on('show-settings-window', (event, bounds) => {
+        if (!bounds) return;  
+        const win = windowPool.get('settings');
+
+        if (win && !win.isDestroyed()) {
+            if (settingsHideTimer) {
+                clearTimeout(settingsHideTimer);
+                settingsHideTimer = null;
+            }
+
+            // Adjust position based on button bounds
+            const header = windowPool.get('header');
+            const headerBounds = header?.getBounds() ?? { x: 0, y: 0 };
+            const settingsBounds = win.getBounds();
+
+            const disp = getCurrentDisplay(header);
+            const { x: waX, y: waY, width: waW, height: waH } = disp.workArea;
+
+            let x = Math.round(headerBounds.x + (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2 - settingsBounds.width / 2);
+            let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 31);
+
+            x = Math.max(waX + 10, Math.min(waX + waW - settingsBounds.width - 10, x));
+            y = Math.max(waY + 10, Math.min(waY + waH - settingsBounds.height - 10, y));
+
+            win.setBounds({ x, y });
+            win.__lockedByButton = true;
+            console.log(`[WindowManager] Positioning settings window at (${x}, ${y}) based on button bounds.`);
+            
+            win.show();
+            win.moveTop();
+            win.setAlwaysOnTop(true);
+        }
+    });
+
+    ipcMain.on('hide-settings-window', (event) => {
+        const window = windowPool.get("settings");
+        if (window && !window.isDestroyed()) {
+            if (settingsHideTimer) {
+                clearTimeout(settingsHideTimer);
+            }
+            settingsHideTimer = setTimeout(() => {
+                if (window && !window.isDestroyed()) {
+                    window.setAlwaysOnTop(false);
+                    window.hide();
+                }
+                settingsHideTimer = null;
+            }, 200);
+            
+            window.__lockedByButton = false;
+        }
+    });
+
+    ipcMain.on('cancel-hide-settings-window', (event) => {
+        if (settingsHideTimer) {
+            clearTimeout(settingsHideTimer);
+            settingsHideTimer = null;
+        }
+    });
+
+
+
+    ipcMain.handle('ask:closeAskWindow', async () => {
+        const askWindow = windowPool.get('ask');
+        if (askWindow) {
+            askWindow.webContents.send('window-hide-animation');
+        }
+    });
+
+
+    ipcMain.handle('ask:sendQuestionToMain', (event, question) => {
+        console.log('📨 Main process: Sending question to AskView', question);
+        toggleFeature('ask', {ask: { questionText: question }});
+        return { success: true };
     });
 }
 
@@ -1290,7 +1263,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                     callback = () => toggleAllWindowsVisibility();
                     break;
                 case 'nextStep':
-                    callback = () => toggleFeature('ask');
+                    callback = () => toggleFeature('ask', {ask: { targetVisibility: 'show' }});
                     break;
                 case 'scrollUp':
                     callback = () => {

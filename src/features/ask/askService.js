@@ -22,11 +22,6 @@ async function sendMessage(userPrompt) {
         console.warn('[AskService] Cannot process empty message');
         return { success: false, error: 'Empty message' };
     }
-    
-    const askWindow = windowPool.get('ask');
-    if (askWindow && !askWindow.isDestroyed()) {
-        askWindow.webContents.send('hide-text-input');
-    }
 
     let sessionId; 
 
