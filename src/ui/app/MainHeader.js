@@ -486,8 +486,7 @@ export class MainHeader extends LitElement {
                 }
                 this.isTogglingSession = false; // ✨ 로딩 상태만 해제
             };
-            // window.api.mainHeader.onSessionStateText(this._sessionStateTextListener);
-            ipcRenderer.on('listen:changeSessionResult', this._sessionStateTextListener);
+            window.api.mainHeader.onListenChangeSessionResult(this._sessionStateTextListener);
 
             this._shortcutListener = (event, keybinds) => {
                 console.log('[MainHeader] Received updated shortcuts:', keybinds);
@@ -508,8 +507,7 @@ export class MainHeader extends LitElement {
         
         if (window.api) {
             if (this._sessionStateTextListener) {
-                // window.api.mainHeader.removeOnSessionStateText(this._sessionStateTextListener);
-                ipcRenderer.removeListener('listen:changeSessionResult', this._sessionStateTextListener);
+                window.api.mainHeader.removeOnListenChangeSessionResult(this._sessionStateTextListener);
             }
             if (this._shortcutListener) {
                 window.api.mainHeader.removeOnShortcutsUpdated(this._shortcutListener);
