@@ -448,4 +448,6 @@ class WhisperService extends LocalAIServiceBase {
     }
 }
 
-module.exports = { WhisperService };
+// Export singleton instance
+const whisperService = new WhisperService();
+module.exports = whisperService;
