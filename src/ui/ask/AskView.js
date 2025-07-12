@@ -921,14 +921,6 @@ export class AskView extends LitElement {
                 this.showTextInput = false;
                 this.requestUpdate();
             });
-            ipcRenderer.on('clear-ask-response', () => {
-                console.log('📤 Clear response signal received');
-                this.currentResponse = '';
-                this.isStreaming = false;
-                this.isLoading = false;
-                this.headerText = 'AI Response';
-                this.requestUpdate();
-            });
             ipcRenderer.on('window-hide-animation', () => {
                 console.log('📤 Ask window hiding - clearing response content');
                 setTimeout(() => {
@@ -977,7 +969,6 @@ export class AskView extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.removeListener('ask-global-send', this.handleGlobalSendRequest);
-            ipcRenderer.removeListener('clear-ask-response', () => { });
             ipcRenderer.removeListener('hide-text-input', () => { });
             ipcRenderer.removeListener('window-hide-animation', () => { });
             ipcRenderer.removeListener('window-blur', this.handleWindowBlur);
