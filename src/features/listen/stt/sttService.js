@@ -471,8 +471,8 @@ class SttService {
         const { app } = require('electron');
         const path = require('path');
         const systemAudioPath = app.isPackaged
-            ? path.join(process.resourcesPath, 'app.asar.unpacked', 'src', 'assets', 'SystemAudioDump')
-            : path.join(app.getAppPath(), 'src', 'assets', 'SystemAudioDump');
+            ? path.join(process.resourcesPath, 'app.asar.unpacked', 'src', 'ui', 'assets', 'SystemAudioDump')
+            : path.join(app.getAppPath(), 'src', 'ui', 'assets', 'SystemAudioDump');
 
         console.log('SystemAudioDump path:', systemAudioPath);
 
