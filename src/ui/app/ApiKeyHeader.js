@@ -1,5 +1,5 @@
 import { html, css, LitElement } from "../assets/lit-core-2.7.4.min.js"
-import { getOllamaProgressTracker } from "../common/services/localProgressTracker.js"
+import { getOllamaProgressTracker } from "../../features/common/services/localProgressTracker.js"
 
 export class ApiKeyHeader extends LitElement {
   //////// after_modelStateService ////////

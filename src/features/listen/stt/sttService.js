@@ -1,6 +1,6 @@
 const { BrowserWindow } = require('electron');
 const { spawn } = require('child_process');
-const { createSTT } = require('../../../common/ai/factory');
+const { createSTT } = require('../../common/ai/factory');
 const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../window/windowManager');
 
 const COMPLETION_DEBOUNCE_MS = 2000;
@@ -367,11 +367,6 @@ class SttService {
                 onclose: event => console.log('Their STT session closed:', event.reason),
             },
         };
-
-        // Determine auth options for providers that support it
-        // const authService = require('../../../common/services/authService');
-        // const userState = authService.getCurrentUser();
-        // const loggedIn = userState.isLoggedIn;
         
         const sttOptions = {
             apiKey: this.modelInfo.apiKey,

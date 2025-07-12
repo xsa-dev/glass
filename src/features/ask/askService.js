@@ -1,10 +1,10 @@
 const { ipcMain, BrowserWindow } = require('electron');
-const { createStreamingLLM } = require('../../common/ai/factory');
+const { createStreamingLLM } = require('../common/ai/factory');
 const { getStoredApiKey, getStoredProvider, getCurrentModelInfo, windowPool, captureScreenshot } = require('../../window/windowManager');
-const authService = require('../../common/services/authService');
-const sessionRepository = require('../../common/repositories/session');
+const authService = require('../common/services/authService');
+const sessionRepository = require('../common/repositories/session');
 const askRepository = require('./repositories');
-const { getSystemPrompt } = require('../../common/prompts/promptBuilder');
+const { getSystemPrompt } = require('../common/prompts/promptBuilder');
 
 function formatConversationForPrompt(conversationTexts) {
     if (!conversationTexts || conversationTexts.length === 0) return 'No conversation history available.';

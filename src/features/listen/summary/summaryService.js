@@ -1,8 +1,7 @@
 const { BrowserWindow } = require('electron');
-const { getSystemPrompt } = require('../../../common/prompts/promptBuilder.js');
-const { createLLM } = require('../../../common/ai/factory');
-const authService = require('../../../common/services/authService');
-const sessionRepository = require('../../../common/repositories/session');
+const { getSystemPrompt } = require('../../common/prompts/promptBuilder.js');
+const { createLLM } = require('../../common/ai/factory');
+const sessionRepository = require('../../common/repositories/session');
 const summaryRepository = require('./repositories');
 const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../window/windowManager.js');
 

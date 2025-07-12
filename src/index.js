@@ -14,9 +14,9 @@ if (require('electron-squirrel-startup')) {
 const { app, BrowserWindow, shell, ipcMain, dialog, desktopCapturer, session } = require('electron');
 const { createWindows } = require('./window/windowManager.js');
 const ListenService = require('./features/listen/listenService');
-const { initializeFirebase } = require('./common/services/firebaseClient');
-const databaseInitializer = require('./common/services/databaseInitializer');
-const authService = require('./common/services/authService');
+const { initializeFirebase } = require('./features/common/services/firebaseClient');
+const databaseInitializer = require('./features/common/services/databaseInitializer');
+const authService = require('./features/common/services/authService');
 const path = require('node:path');
 const express = require('express');
 const fetch = require('node-fetch');
@@ -24,9 +24,9 @@ const { autoUpdater } = require('electron-updater');
 const { EventEmitter } = require('events');
 const askService = require('./features/ask/askService');
 const settingsService = require('./features/settings/settingsService');
-const sessionRepository = require('./common/repositories/session');
-const ModelStateService = require('./common/services/modelStateService');
-const sqliteClient = require('./common/services/sqliteClient');
+const sessionRepository = require('./features/common/repositories/session');
+const ModelStateService = require('./features/common/services/modelStateService');
+const sqliteClient = require('./features/common/services/sqliteClient');
 const featureBridge = require('./bridge/featureBridge');
 
 // Global variables
@@ -44,8 +44,8 @@ global.modelStateService = modelStateService;
 //////// after_modelStateService ////////
 
 // Import and initialize OllamaService
-const ollamaService = require('./common/services/ollamaService');
-const ollamaModelRepository = require('./common/repositories/ollamaModel');
+const ollamaService = require('./features/common/services/ollamaService');
+const ollamaModelRepository = require('./features/common/repositories/ollamaModel');
 
 // Native deep link handling - cross-platform compatible
 let pendingDeepLinkUrl = null;
@@ -331,7 +331,7 @@ app.on('activate', () => {
 });
 
 function setupWhisperIpcHandlers() {
-    const { WhisperService } = require('./common/services/whisperService');
+    const { WhisperService } = require('./features/common/services/whisperService');
     const whisperService = new WhisperService();
     
     // Forward download progress events to renderer
@@ -395,8 +395,8 @@ function setupWhisperIpcHandlers() {
 }
 
 function setupGeneralIpcHandlers() {
-    const userRepository = require('./common/repositories/user');
-    const presetRepository = require('./common/repositories/preset');
+    const userRepository = require('./features/common/repositories/user');
+    const presetRepository = require('./features/common/repositories/preset');
 
     ipcMain.handle('get-user-presets', () => {
         // The adapter injects the UID.
@@ -627,12 +627,12 @@ function setupOllamaIpcHandlers() {
 }
 
 function setupWebDataHandlers() {
-    const sessionRepository = require('./common/repositories/session');
+    const sessionRepository = require('./features/common/repositories/session');
     const sttRepository = require('./features/listen/stt/repositories');
     const summaryRepository = require('./features/listen/summary/repositories');
     const askRepository = require('./features/ask/repositories');
-    const userRepository = require('./common/repositories/user');
-    const presetRepository = require('./common/repositories/preset');
+    const userRepository = require('./features/common/repositories/user');
+    const presetRepository = require('./features/common/repositories/preset');
 
     const handleRequest = async (channel, responseChannel, payload) => {
         let result;
@@ -808,7 +808,7 @@ async function handleCustomUrl(url) {
 }
 
 async function handleFirebaseAuthCallback(params) {
-    const userRepository = require('./common/repositories/user');
+    const userRepository = require('./features/common/repositories/user');
     const { token: idToken } = params;
 
     if (!idToken) {

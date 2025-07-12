@@ -1,8 +1,8 @@
 import { html, css, LitElement } from '../assets/lit-core-2.7.4.min.js';
 import { SettingsView } from '../settings/SettingsView.js';
 import { ListenView } from '../listen/ListenView.js';
-import { AskView } from '../../features/ask/AskView.js';
-import { ShortcutSettingsView } from '../../features/settings/ShortCutSettingsView.js';
+import { AskView } from '../ask/AskView.js';
+import { ShortcutSettingsView } from '../settings/ShortCutSettingsView.js';
 
 import '../listen/audioCore/renderer.js';
 
