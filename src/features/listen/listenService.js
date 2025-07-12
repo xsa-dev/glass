@@ -1,8 +1,8 @@
 const { BrowserWindow, app } = require('electron');
 const SttService = require('./stt/sttService');
 const SummaryService = require('./summary/summaryService');
-const authService = require('../../common/services/authService');
-const sessionRepository = require('../../common/repositories/session');
+const authService = require('../common/services/authService');
+const sessionRepository = require('../common/repositories/session');
 const sttRepository = require('./stt/repositories');
 
 class ListenService {

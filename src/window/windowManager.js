@@ -17,10 +17,8 @@ try {
     console.warn('[WindowManager] Screenshot functionality will work with reduced image processing capabilities');
     sharp = null;
 }
-const authService = require('../common/services/authService');
-const systemSettingsRepository = require('../common/repositories/systemSettings');
-const userRepository = require('../common/repositories/user');
-const fetch = require('node-fetch');
+const authService = require('../features/common/services/authService');
+const systemSettingsRepository = require('../features/common/repositories/systemSettings');
 const Store = require('electron-store');
 const shortCutStore = new Store({
     name: 'user-preferences',
@@ -253,11 +251,11 @@ function createFeatureWindows(header, namesToCreate) {
                 }
                 const listenLoadOptions = { query: { view: 'listen' } };
                 if (!shouldUseLiquidGlass) {
-                    listen.loadFile(path.join(__dirname, '../app/content.html'), listenLoadOptions);
+                    listen.loadFile(path.join(__dirname, '../ui/app/content.html'), listenLoadOptions);
                 }
                 else {
                     listenLoadOptions.query.glass = 'true';
-                    listen.loadFile(path.join(__dirname, '../app/content.html'), listenLoadOptions);
+                    listen.loadFile(path.join(__dirname, '../ui/app/content.html'), listenLoadOptions);
                     listen.webContents.once('did-finish-load', () => {
                         const viewId = liquidGlass.addView(listen.getNativeWindowHandle());
                         if (viewId !== -1) {
@@ -284,11 +282,11 @@ function createFeatureWindows(header, namesToCreate) {
                 }
                 const askLoadOptions = { query: { view: 'ask' } };
                 if (!shouldUseLiquidGlass) {
-                    ask.loadFile(path.join(__dirname, '../app/content.html'), askLoadOptions);
+                    ask.loadFile(path.join(__dirname, '../ui/app/content.html'), askLoadOptions);
                 }
                 else {
                     askLoadOptions.query.glass = 'true';
-                    ask.loadFile(path.join(__dirname, '../app/content.html'), askLoadOptions);
+                    ask.loadFile(path.join(__dirname, '../ui/app/content.html'), askLoadOptions);
                     ask.webContents.once('did-finish-load', () => {
                         const viewId = liquidGlass.addView(ask.getNativeWindowHandle());
                         if (viewId !== -1) {
@@ -319,12 +317,12 @@ function createFeatureWindows(header, namesToCreate) {
                 }
                 const settingsLoadOptions = { query: { view: 'settings' } };
                 if (!shouldUseLiquidGlass) {
-                    settings.loadFile(path.join(__dirname,'../app/content.html'), settingsLoadOptions)
+                    settings.loadFile(path.join(__dirname,'../ui/app/content.html'), settingsLoadOptions)
                         .catch(console.error);
                 }
                 else {
                     settingsLoadOptions.query.glass = 'true';
-                    settings.loadFile(path.join(__dirname,'../app/content.html'), settingsLoadOptions)
+                    settings.loadFile(path.join(__dirname,'../ui/app/content.html'), settingsLoadOptions)
                         .catch(console.error);
                     settings.webContents.once('did-finish-load', () => {
                         const viewId = liquidGlass.addView(settings.getNativeWindowHandle());
@@ -383,10 +381,10 @@ function createFeatureWindows(header, namesToCreate) {
 
                 const loadOptions = { query: { view: 'shortcut-settings' } };
                 if (!shouldUseLiquidGlass) {
-                    shortcutEditor.loadFile(path.join(__dirname, '../app/content.html'), loadOptions);
+                    shortcutEditor.loadFile(path.join(__dirname, '../ui/app/content.html'), loadOptions);
                 } else {
                     loadOptions.query.glass = 'true';
-                    shortcutEditor.loadFile(path.join(__dirname, '../app/content.html'), loadOptions);
+                    shortcutEditor.loadFile(path.join(__dirname, '../ui/app/content.html'), loadOptions);
                     shortcutEditor.webContents.once('did-finish-load', () => {
                         const viewId = liquidGlass.addView(shortcutEditor.getNativeWindowHandle());
                         if (viewId !== -1) {
@@ -534,11 +532,11 @@ function createWindows() {
     }
     const headerLoadOptions = {};
     if (!shouldUseLiquidGlass) {
-        header.loadFile(path.join(__dirname, '../app/header.html'), headerLoadOptions);
+        header.loadFile(path.join(__dirname, '../ui/app/header.html'), headerLoadOptions);
     }
     else {
         headerLoadOptions.query = { glass: 'true' };
-        header.loadFile(path.join(__dirname, '../app/header.html'), headerLoadOptions);
+        header.loadFile(path.join(__dirname, '../ui/app/header.html'), headerLoadOptions);
         header.webContents.once('did-finish-load', () => {
             const viewId = liquidGlass.addView(header.getNativeWindowHandle());
             if (viewId !== -1) {
@@ -564,7 +562,6 @@ function createWindows() {
 
     header.setContentProtection(isContentProtectionOn);
     header.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    // header.loadFile(path.join(__dirname, '../app/header.html'));
     
     // Open DevTools in development
     if (!app.isPackaged) {

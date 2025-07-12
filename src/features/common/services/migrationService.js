@@ -5,9 +5,9 @@ const encryptionService = require('../services/encryptionService');
 const sqliteSessionRepo = require('../repositories/session/sqlite.repository');
 const sqlitePresetRepo = require('../repositories/preset/sqlite.repository');
 const sqliteUserRepo = require('../repositories/user/sqlite.repository');
-const sqliteSttRepo = require('../../features/listen/stt/repositories/sqlite.repository');
-const sqliteSummaryRepo = require('../../features/listen/summary/repositories/sqlite.repository');
-const sqliteAiMessageRepo = require('../../features/ask/repositories/sqlite.repository');
+const sqliteSttRepo = require('../../listen/stt/repositories/sqlite.repository');
+const sqliteSummaryRepo = require('../../listen/summary/repositories/sqlite.repository');
+const sqliteAiMessageRepo = require('../../ask/repositories/sqlite.repository');
 
 const MAX_BATCH_OPERATIONS = 500;
 
