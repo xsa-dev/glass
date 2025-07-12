@@ -96,8 +96,12 @@ class HeaderTransitionManager {
 
     //////// after_modelStateService ////////
     async handleStateUpdate(userState) {
+        console.log('[HeaderController DEBUG] handleStateUpdate called with userState:', userState);
         const { ipcRenderer } = window.require('electron');
+        
+        console.log('[HeaderController DEBUG] Invoking "model:are-providers-configured"...');
         const isConfigured = await ipcRenderer.invoke('model:are-providers-configured');
+        console.log('[HeaderController DEBUG] "model:are-providers-configured" returned:', isConfigured);
 
         if (isConfigured) {
             const { isLoggedIn } = userState;

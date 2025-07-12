@@ -197,8 +197,6 @@ app.whenReady().then(async () => {
         await modelStateService.initialize();
         //////// after_modelStateService ////////
 
-        listenService.initialize();
-        askService.initialize();
         featureBridge.initialize();  // 추가: featureBridge 초기화
         setupWebDataHandlers();
 

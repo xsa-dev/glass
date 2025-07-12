@@ -1541,7 +1541,7 @@ export class ApiKeyHeader extends LitElement {
     this.classList.remove("sliding-out");
     this.classList.add("hidden");
     
-    console.log('[ApiKeyHeader] handleAnimationEnd: Animation completed, transitioning to next state...');
+    console.log('[ApiKeyHeader] handleAnimationEnd: Transition completed, transitioning to next state...');
     
     if (!window.require) {
       console.error('[ApiKeyHeader] handleAnimationEnd: window.require not available');
@@ -1585,7 +1585,8 @@ export class ApiKeyHeader extends LitElement {
 
   connectedCallback() {
     super.connectedCallback()
-    this.addEventListener("animationend", this.handleAnimationEnd)
+    // this.addEventListener("animationend", this.handleAnimationEnd)
+    this.addEventListener("transitionend", this.handleAnimationEnd)
   }
   
   handleMessageFadeEnd(e) {
@@ -1603,8 +1604,8 @@ export class ApiKeyHeader extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback()
-    this.removeEventListener("animationend", this.handleAnimationEnd)
-    
+    // this.removeEventListener("animationend", this.handleAnimationEnd)
+    this.removeEventListener("transitionend", this.handleAnimationEnd)
     // Professional cleanup of all resources
     this._performCompleteCleanup();
   }

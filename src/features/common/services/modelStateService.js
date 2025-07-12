@@ -36,15 +36,17 @@ class ModelStateService {
         console.log(`[ModelStateService] Current Selection -> LLM: ${llmModel || 'None'} (Provider: ${llmProvider}), STT: ${sttModel || 'None'} (Provider: ${sttProvider})`);
     }
 
-    _autoSelectAvailableModels() {
-        console.log('[ModelStateService] Running auto-selection for models...');
+    _autoSelectAvailableModels(forceReselectionForTypes = []) {
+        console.log(`[ModelStateService] Running auto-selection for models. Force re-selection for: [${forceReselectionForTypes.join(', ')}]`);
         const types = ['llm', 'stt'];
 
         types.forEach(type => {
             const currentModelId = this.state.selectedModels[type];
             let isCurrentModelValid = false;
 
-            if (currentModelId) {
+            const forceReselection = forceReselectionForTypes.includes(type);
+
+            if (currentModelId && !forceReselection) {
                 const provider = this.getProviderForModel(type, currentModelId);
                 const apiKey = this.getApiKey(provider);
                 // For Ollama, 'local' is a valid API key
@@ -54,7 +56,7 @@ class ModelStateService {
             }
 
             if (!isCurrentModelValid) {
-                console.log(`[ModelStateService] No valid ${type.toUpperCase()} model selected. Finding an alternative...`);
+                console.log(`[ModelStateService] No valid ${type.toUpperCase()} model selected or re-selection forced. Finding an alternative...`);
                 const availableModels = this.getAvailableModels(type);
                 if (availableModels.length > 0) {
                     // Prefer API providers over local providers for auto-selection
@@ -331,7 +333,16 @@ class ModelStateService {
     async setApiKey(provider, key) {
         if (provider in this.state.apiKeys) {
             this.state.apiKeys[provider] = key;
-            this._autoSelectAvailableModels();
+
+            const supportedTypes = [];
+            if (PROVIDERS[provider]?.llmModels.length > 0 || provider === 'ollama') {
+                supportedTypes.push('llm');
+            }
+            if (PROVIDERS[provider]?.sttModels.length > 0 || provider === 'whisper') {
+                supportedTypes.push('stt');
+            }
+
+            this._autoSelectAvailableModels(supportedTypes);
             await this._saveState();
             return true;
         }
@@ -395,6 +406,8 @@ class ModelStateService {
     areProvidersConfigured() {
         if (this.isLoggedInWithFirebase()) return true;
         
+        console.log('[DEBUG] Checking configured providers with apiKeys state:', JSON.stringify(this.state.apiKeys, (key, value) => (value ? '***' : null), 2));
+
         // LLM과 STT 모델을 제공하는 Provider 중 하나라도 API 키가 설정되었는지 확인
         const hasLlmKey = Object.entries(this.state.apiKeys).some(([provider, key]) => {
             if (provider === 'ollama') {

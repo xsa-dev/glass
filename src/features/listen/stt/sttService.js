@@ -41,6 +41,17 @@ class SttService {
         });
     }
 
+    async handleSendSystemAudioContent(data, mimeType) {
+        try {
+            await this.sendSystemAudioContent(data, mimeType);
+            this.sendToRenderer('system-audio-data', { data });
+            return { success: true };
+        } catch (error) {
+            console.error('Error sending system audio:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
     flushMyCompletion() {
         const finalText = (this.myCompletionBuffer + this.myCurrentUtterance).trim();
         if (!this.modelInfo || !finalText) return;

@@ -56,7 +56,23 @@ module.exports = {
     ipcMain.handle('ollama:get-warm-up-status', async () => await ollamaService.handleGetWarmUpStatus());
     ipcMain.handle('ollama:shutdown', async (event, force = false) => await ollamaService.handleShutdown(event, force));
 
-    // ModelStateService
+    // Ask
+    ipcMain.handle('ask:sendMessage', async (event, userPrompt, conversationHistoryRaw = []) => await askService.sendMessage(userPrompt, conversationHistoryRaw));
+  
+    // Listen
+    ipcMain.handle('send-audio-content', async (event, { data, mimeType }) => await listenService.handleSendAudioContent(data, mimeType));
+    ipcMain.handle('send-system-audio-content', async (event, { data, mimeType }) => {
+        const result = await listenService.sttService.sendSystemAudioContent(data, mimeType);
+        if(result.success) {
+            listenService.sendToRenderer('system-audio-data', { data });
+        }
+        return result;
+    });
+    ipcMain.handle('start-macos-audio', async () => await listenService.handleStartMacosAudio());
+    ipcMain.handle('stop-macos-audio', async () => await listenService.handleStopMacosAudio());
+    ipcMain.handle('update-google-search-setting', async (event, enabled) => await listenService.handleUpdateGoogleSearchSetting(enabled));
+
+     // ModelStateService
     ipcMain.handle('model:validate-key', async (e, { provider, key }) => await modelStateService.handleValidateKey(provider, key));
     ipcMain.handle('model:get-all-keys', () => modelStateService.getAllApiKeys());
     ipcMain.handle('model:set-api-key', async (e, { provider, key }) => await modelStateService.setApiKey(provider, key));

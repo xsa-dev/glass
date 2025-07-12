@@ -1,4 +1,4 @@
-const { ipcMain, BrowserWindow } = require('electron');
+const { BrowserWindow } = require('electron');
 const { createStreamingLLM } = require('../common/ai/factory');
 const { getCurrentModelInfo, windowPool, captureScreenshot } = require('../../window/windowManager');
 const sessionRepository = require('../common/repositories/session');
@@ -15,17 +15,6 @@ class AskService {
      */
     constructor() {
         console.log('[AskService] Service instance created.');
-    }
-
-    /**
-     * IPC 리스너를 등록하여 렌더러 프로세스로부터의 요청을 처리합니다.
-     * Electron 애플리케이션의 메인 프로세스에서 한 번만 호출되어야 합니다.
-     */
-    initialize() {
-        ipcMain.handle('ask:sendMessage', async (event, userPrompt, conversationHistoryRaw=[]) => {
-            return this.sendMessage(userPrompt, conversationHistoryRaw);
-        });
-        console.log('[AskService] Initialized and ready.');
     }
 
     /**
