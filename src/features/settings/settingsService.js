@@ -4,6 +4,11 @@ const authService = require('../common/services/authService');
 const settingsRepository = require('./repositories');
 const { getStoredApiKey, getStoredProvider, windowPool } = require('../../window/windowManager');
 
+// New imports for common services
+const modelStateService = require('../common/services/modelStateService');
+const ollamaService = require('../common/services/ollamaService');
+const whisperService = require('../common/services/whisperService');
+
 const store = new Store({
     name: 'pickle-glass-settings',
     defaults: {
@@ -18,6 +23,51 @@ const NOTIFICATION_CONFIG = {
     MAX_RETRY_ATTEMPTS: 3,
     RETRY_BASE_DELAY: 1000, // exponential backoff base (ms)
 };
+
+// New facade functions for model state management
+async function getModelSettings() {
+    try {
+        const [config, storedKeys, availableLlm, availableStt, selectedModels] = await Promise.all([
+            modelStateService.getProviderConfig(),
+            modelStateService.getAllApiKeys(),
+            modelStateService.getAvailableModels('llm'),
+            modelStateService.getAvailableModels('stt'),
+            modelStateService.getSelectedModels(),
+        ]);
+        return { success: true, data: { config, storedKeys, availableLlm, availableStt, selectedModels } };
+    } catch (error) {
+        console.error('[SettingsService] Error getting model settings:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function validateAndSaveKey(provider, key) {
+    return modelStateService.handleValidateKey(provider, key);
+}
+
+async function clearApiKey(provider) {
+    const success = await modelStateService.handleRemoveApiKey(provider);
+    return { success };
+}
+
+async function setSelectedModel(type, modelId) {
+    const success = await modelStateService.handleSetSelectedModel(type, modelId);
+    return { success };
+}
+
+// Ollama facade functions
+async function getOllamaStatus() {
+    return ollamaService.getStatus();
+}
+
+async function ensureOllamaReady() {
+    return ollamaService.ensureReady();
+}
+
+async function shutdownOllama() {
+    return ollamaService.shutdown(false); // false for graceful shutdown
+}
+
 
 // window targeting system
 class WindowNotificationManager {
@@ -373,7 +423,16 @@ function initialize() {
     // cleanup 
     windowNotificationManager.cleanup();
     
-    // IPC handlers 제거 (featureBridge로 이동)
+    // IPC handlers for model settings
+    ipcMain.handle('settings:get-model-settings', getModelSettings);
+    ipcMain.handle('settings:validate-and-save-key', (e, { provider, key }) => validateAndSaveKey(provider, key));
+    ipcMain.handle('settings:clear-api-key', (e, { provider }) => clearApiKey(provider));
+    ipcMain.handle('settings:set-selected-model', (e, { type, modelId }) => setSelectedModel(type, modelId));
+
+    // IPC handlers for Ollama management
+    ipcMain.handle('settings:get-ollama-status', getOllamaStatus);
+    ipcMain.handle('settings:ensure-ollama-ready', ensureOllamaReady);
+    ipcMain.handle('settings:shutdown-ollama', shutdownOllama);
     
     console.log('[SettingsService] Initialized and ready.');
 }
@@ -406,4 +465,14 @@ module.exports = {
     removeApiKey,
     updateContentProtection,
     getAutoUpdateSetting,
+    setAutoUpdateSetting,
+    // Model settings facade
+    getModelSettings,
+    validateAndSaveKey,
+    clearApiKey,
+    setSelectedModel,
+    // Ollama facade
+    getOllamaStatus,
+    ensureOllamaReady,
+    shutdownOllama
 };

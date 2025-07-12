@@ -295,6 +295,10 @@ function createFeatureWindows(header, namesToCreate) {
                     });
                 }
                 windowPool.set('settings', settings);  
+
+                if (!app.isPackaged) {
+                    settings.webContents.openDevTools({ mode: 'detach' });
+                }
                 break;
             }
 
@@ -1051,6 +1055,7 @@ function setupIpcHandlers(movementManager) {
         const win = windowPool.get('settings');
 
         if (win && !win.isDestroyed()) {
+            console.log('[WindowManager] Showing settings window');
             if (settingsHideTimer) {
                 clearTimeout(settingsHideTimer);
                 settingsHideTimer = null;
@@ -1077,6 +1082,9 @@ function setupIpcHandlers(movementManager) {
             win.show();
             win.moveTop();
             win.setAlwaysOnTop(true);
+            console.log('[WindowManager] Settings window shown');
+        } else {
+            console.log('[WindowManager] Settings window not found');
         }
     });
 

@@ -543,9 +543,11 @@ export class SettingsView extends LitElement {
     }
 
     async loadAutoUpdateSetting() {
+        if (!window.require) return;
+        const { ipcRenderer } = window.require('electron');
         this.autoUpdateLoading = true;
         try {
-            const enabled = await window.api.feature.settings.getAutoUpdate();
+            const enabled = await ipcRenderer.invoke('settings:get-auto-update');
             this.autoUpdateEnabled = enabled;
             console.log('Auto-update setting loaded:', enabled);
         } catch (e) {
@@ -557,12 +559,13 @@ export class SettingsView extends LitElement {
     }
 
     async handleToggleAutoUpdate() {
-        if (this.autoUpdateLoading) return;
+        if (!window.require || this.autoUpdateLoading) return;
+        const { ipcRenderer } = window.require('electron');
         this.autoUpdateLoading = true;
         this.requestUpdate();
         try {
             const newValue = !this.autoUpdateEnabled;
-            const result = await window.api.feature.settings.setAutoUpdate(newValue);
+            const result = await ipcRenderer.invoke('settings:set-auto-update', newValue);
             if (result && result.success) {
                 this.autoUpdateEnabled = newValue;
             } else {
@@ -577,29 +580,32 @@ export class SettingsView extends LitElement {
 
     //////// after_modelStateService ////////
     async loadInitialData() {
+        if (!window.require) return;
         this.isLoading = true;
+        const { ipcRenderer } = window.require('electron');
         try {
-            const [userState, config, storedKeys, availableLlm, availableStt, selectedModels, presets, contentProtection, shortcuts, ollamaStatus, whisperModelsResult] = await Promise.all([
-                window.api.feature.settings.getCurrentUser(),
-                window.api.feature.settings.getProviderConfig(), // Provider 설정 로드
-                window.api.feature.settings.getAllKeys(),
-                window.api.feature.settings.getAvailableModels({ type: 'llm' }),
-                window.api.feature.settings.getAvailableModels({ type: 'stt' }),
-                window.api.feature.settings.getSelectedModels(),
-                window.api.feature.settings.getPresets(),
-                window.api.feature.settings.getContentProtectionStatus(),
-                window.api.feature.settings.getCurrentShortcuts(),
-                window.api.feature.settings.getOllamaStatus(),
-                window.api.feature.settings.getWhisperInstalledModels()
+            const [userState, modelSettings, presets, contentProtection, shortcuts, ollamaStatus, whisperModelsResult] = await Promise.all([
+                ipcRenderer.invoke('get-current-user'),
+                ipcRenderer.invoke('settings:get-model-settings'), // Facade call
+                ipcRenderer.invoke('settings:getPresets'),
+                ipcRenderer.invoke('get-content-protection-status'),
+                ipcRenderer.invoke('get-current-shortcuts'),
+                ipcRenderer.invoke('settings:get-ollama-status'),
+                ipcRenderer.invoke('whisper:get-installed-models')
             ]);
             
             if (userState && userState.isLoggedIn) this.firebaseUser = userState;
-            this.providerConfig = config;
-            this.apiKeys = storedKeys;
-            this.availableLlmModels = availableLlm;
-            this.availableSttModels = availableStt;
-            this.selectedLlm = selectedModels.llm;
-            this.selectedStt = selectedModels.stt;
+            
+            if (modelSettings.success) {
+                const { config, storedKeys, availableLlm, availableStt, selectedModels } = modelSettings.data;
+                this.providerConfig = config;
+                this.apiKeys = storedKeys;
+                this.availableLlmModels = availableLlm;
+                this.availableSttModels = availableStt;
+                this.selectedLlm = selectedModels.llm;
+                this.selectedStt = selectedModels.stt;
+            }
+
             this.presets = presets || [];
             this.isContentProtectionOn = contentProtection;
             this.shortcuts = shortcuts || {};
@@ -631,6 +637,7 @@ export class SettingsView extends LitElement {
         }
     }
 
+
     async handleSaveKey(provider) {
         const input = this.shadowRoot.querySelector(`#key-input-${provider}`);
         if (!input) return;
@@ -639,9 +646,10 @@ export class SettingsView extends LitElement {
         // For Ollama, we need to ensure it's ready first
         if (provider === 'ollama') {
         this.saving = true;
+            const { ipcRenderer } = window.require('electron');
             
             // First ensure Ollama is installed and running
-            const ensureResult = await window.api.feature.settings.ensureOllamaReady();
+            const ensureResult = await ipcRenderer.invoke('settings:ensure-ollama-ready');
             if (!ensureResult.success) {
                 alert(`Failed to setup Ollama: ${ensureResult.error}`);
                 this.saving = false;
@@ -649,10 +657,9 @@ export class SettingsView extends LitElement {
             }
             
             // Now validate (which will check if service is running)
-            const result = await window.api.feature.settings.validateKey({ provider, key: 'local' });
+            const result = await ipcRenderer.invoke('settings:validate-and-save-key', { provider, key: 'local' });
             
             if (result.success) {
-                this.apiKeys = { ...this.apiKeys, [provider]: 'local' };
                 await this.refreshModelData();
                 await this.refreshOllamaStatus();
             } else {
@@ -665,10 +672,10 @@ export class SettingsView extends LitElement {
         // For Whisper, just enable it
         if (provider === 'whisper') {
             this.saving = true;
-            const result = await window.api.feature.settings.validateKey({ provider, key: 'local' });
+            const { ipcRenderer } = window.require('electron');
+            const result = await ipcRenderer.invoke('settings:validate-and-save-key', { provider, key: 'local' });
             
             if (result.success) {
-                this.apiKeys = { ...this.apiKeys, [provider]: 'local' };
                 await this.refreshModelData();
             } else {
                 alert(`Failed to enable Whisper: ${result.error}`);
@@ -679,10 +686,10 @@ export class SettingsView extends LitElement {
         
         // For other providers, use the normal flow
         this.saving = true;
-        const result = await window.api.feature.settings.validateKey({ provider, key });
+        const { ipcRenderer } = window.require('electron');
+        const result = await ipcRenderer.invoke('settings:validate-and-save-key', { provider, key });
         
         if (result.success) {
-            this.apiKeys = { ...this.apiKeys, [provider]: key };
             await this.refreshModelData();
         } else {
             alert(`Failed to save ${provider} key: ${result.error}`);
@@ -693,24 +700,23 @@ export class SettingsView extends LitElement {
     
     async handleClearKey(provider) {
         this.saving = true;
-        await window.api.feature.settings.removeApiKey({ provider });
-        this.apiKeys = { ...this.apiKeys, [provider]: '' };
+        const { ipcRenderer } = window.require('electron');
+        await ipcRenderer.invoke('settings:clear-api-key', { provider });
         await this.refreshModelData();
         this.saving = false;
     }
 
     async refreshModelData() {
-        const [availableLlm, availableStt, selected, storedKeys] = await Promise.all([
-            window.api.feature.settings.getAvailableModels({ type: 'llm' }),
-            window.api.feature.settings.getAvailableModels({ type: 'stt' }),
-            window.api.feature.settings.getSelectedModels(),
-            window.api.feature.settings.getAllKeys()
-        ]);
-        this.availableLlmModels = availableLlm;
-        this.availableSttModels = availableStt;
-        this.selectedLlm = selected.llm;
-        this.selectedStt = selected.stt;
-        this.apiKeys = storedKeys;
+        const { ipcRenderer } = window.require('electron');
+        const result = await ipcRenderer.invoke('settings:get-model-settings');
+        if (result.success) {
+            const { availableLlm, availableStt, selectedModels, storedKeys } = result.data;
+            this.availableLlmModels = availableLlm;
+            this.availableSttModels = availableStt;
+            this.selectedLlm = selectedModels.llm;
+            this.selectedStt = selectedModels.stt;
+            this.apiKeys = storedKeys;
+        }
         this.requestUpdate();
     }
     
@@ -755,7 +761,8 @@ export class SettingsView extends LitElement {
         }
         
         this.saving = true;
-        await window.api.feature.settings.setSelectedModel({ type, modelId });
+        const { ipcRenderer } = window.require('electron');
+        await ipcRenderer.invoke('settings:set-selected-model', { type, modelId });
         if (type === 'llm') this.selectedLlm = modelId;
         if (type === 'stt') this.selectedStt = modelId;
         this.isLlmListVisible = false;
@@ -765,7 +772,8 @@ export class SettingsView extends LitElement {
     }
     
     async refreshOllamaStatus() {
-        const ollamaStatus = await window.api.feature.settings.getOllamaStatus();
+        const { ipcRenderer } = window.require('electron');
+        const ollamaStatus = await ipcRenderer.invoke('settings:get-ollama-status');
         if (ollamaStatus?.success) {
             this.ollamaStatus = { installed: ollamaStatus.installed, running: ollamaStatus.running };
             this.ollamaModels = ollamaStatus.models || [];
@@ -809,6 +817,8 @@ export class SettingsView extends LitElement {
         this.requestUpdate();
         
         try {
+            const { ipcRenderer } = window.require('electron');
+            
             // Set up progress listener
             const progressHandler = (event, { modelId: id, progress }) => {
                 if (id === modelId) {
@@ -817,10 +827,10 @@ export class SettingsView extends LitElement {
                 }
             };
             
-            window.api.feature.settings.onWhisperDownloadProgress(progressHandler);
+            ipcRenderer.on('whisper:download-progress', progressHandler);
             
             // Start download
-            const result = await window.api.feature.settings.downloadWhisperModel(modelId);
+            const result = await ipcRenderer.invoke('whisper:download-model', modelId);
             
             if (result.success) {
                 // Auto-select the model after download
@@ -830,7 +840,7 @@ export class SettingsView extends LitElement {
             }
             
             // Cleanup
-            window.api.feature.settings.removeOnWhisperDownloadProgress(progressHandler);
+            ipcRenderer.removeListener('whisper:download-progress', progressHandler);
         } catch (error) {
             console.error(`[SettingsView] Error downloading Whisper model ${modelId}:`, error);
             alert(`Error downloading ${modelId}: ${error.message}`);
@@ -862,12 +872,17 @@ export class SettingsView extends LitElement {
         if (this.wasJustDragged) return
     
         console.log("Requesting Firebase authentication from main process...")
-        window.api.feature.settings.startFirebaseAuth();
-    }
+        if (window.require) {
+          window.require("electron").ipcRenderer.invoke("start-firebase-auth")
+        }
+      }
     //////// after_modelStateService ////////
 
     openShortcutEditor() {
-        window.api.feature.settings.openShortcutEditor();
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('open-shortcut-editor');
+        }
     }
 
     connectedCallback() {
@@ -905,6 +920,10 @@ export class SettingsView extends LitElement {
     }
 
     setupIpcListeners() {
+        if (!window.require) return;
+        
+        const { ipcRenderer } = window.require('electron');
+        
         this._userStateListener = (event, userState) => {
             console.log('[SettingsView] Received user-state-changed:', userState);
             if (userState && userState.isLoggedIn) {
@@ -926,7 +945,7 @@ export class SettingsView extends LitElement {
         this._presetsUpdatedListener = async (event) => {
             console.log('[SettingsView] Received presets-updated, refreshing presets');
             try {
-                const presets = await window.api.feature.settings.getPresets();
+                const presets = await ipcRenderer.invoke('settings:getPresets');
                 this.presets = presets || [];
                 
                 // 현재 선택된 프리셋이 삭제되었는지 확인 (사용자 프리셋만 고려)
@@ -945,24 +964,28 @@ export class SettingsView extends LitElement {
             this.shortcuts = keybinds;
         };
         
-        window.api.feature.settings.onUserStateChanged(this._userStateListener);
-        window.api.feature.settings.onSettingsUpdated(this._settingsUpdatedListener);
-        window.api.feature.settings.onPresetsUpdated(this._presetsUpdatedListener);
-        window.api.feature.settings.onShortcutsUpdated(this._shortcutListener);
+        ipcRenderer.on('user-state-changed', this._userStateListener);
+        ipcRenderer.on('settings-updated', this._settingsUpdatedListener);
+        ipcRenderer.on('presets-updated', this._presetsUpdatedListener);
+        ipcRenderer.on('shortcuts-updated', this._shortcutListener);
     }
 
     cleanupIpcListeners() {
+        if (!window.require) return;
+        
+        const { ipcRenderer } = window.require('electron');
+        
         if (this._userStateListener) {
-            window.api.feature.settings.removeOnUserStateChanged(this._userStateListener);
+            ipcRenderer.removeListener('user-state-changed', this._userStateListener);
         }
         if (this._settingsUpdatedListener) {
-            window.api.feature.settings.removeOnSettingsUpdated(this._settingsUpdatedListener);
+            ipcRenderer.removeListener('settings-updated', this._settingsUpdatedListener);
         }
         if (this._presetsUpdatedListener) {
-            window.api.feature.settings.removeOnPresetsUpdated(this._presetsUpdatedListener);
+            ipcRenderer.removeListener('presets-updated', this._presetsUpdatedListener);
         }
         if (this._shortcutListener) {
-            window.api.feature.settings.removeOnShortcutsUpdated(this._shortcutListener);
+            ipcRenderer.removeListener('shortcuts-updated', this._shortcutListener);
         }
     }
 
@@ -996,11 +1019,17 @@ export class SettingsView extends LitElement {
     }
 
     handleMouseEnter = () => {
-        window.api.window.cancelHideSettingsWindow();
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.send('cancel-hide-settings-window');
+        }
     }
 
     handleMouseLeave = () => {
-        window.api.window.hideSettingsWindow();
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.send('hide-settings-window');
+        }
     }
 
     // getMainShortcuts() {
@@ -1050,74 +1079,70 @@ export class SettingsView extends LitElement {
 
     handleMoveLeft() {
         console.log('Move Left clicked');
-        window.api.feature.settings.moveWindowStep('left');
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('move-window-step', 'left');
+        }
     }
 
     handleMoveRight() {
         console.log('Move Right clicked');
-        window.api.feature.settings.moveWindowStep('right');
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('move-window-step', 'right');
+        }
     }
 
     async handlePersonalize() {
         console.log('Personalize clicked');
-        try {
-            await window.api.window.openLoginPage();
-        } catch (error) {
-            console.error('Failed to open personalize page:', error);
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            try {
+                await ipcRenderer.invoke('open-login-page');
+            } catch (error) {
+                console.error('Failed to open personalize page:', error);
+            }
         }
     }
 
     async handleToggleInvisibility() {
         console.log('Toggle Invisibility clicked');
-        this.isContentProtectionOn = await window.api.window.toggleContentProtection();
-        this.requestUpdate();
-    }
-
-    async handleSaveApiKey() {
-        const input = this.shadowRoot.getElementById('api-key-input');
-        if (!input || !input.value) return;
-
-        const newApiKey = input.value;
-        try {
-            const result = await window.api.feature.settings.saveApiKey(newApiKey);
-            if (result.success) {
-                console.log('API Key saved successfully via IPC.');
-                this.apiKey = newApiKey;
-                this.requestUpdate();
-            } else {
-                 console.error('Failed to save API Key via IPC:', result.error);
-            }
-        } catch(e) {
-            console.error('Error invoking save-api-key IPC:', e);
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            this.isContentProtectionOn = await ipcRenderer.invoke('toggle-content-protection');
+            this.requestUpdate();
         }
-    }
-
-    async handleClearApiKey() {
-        console.log('Clear API Key clicked');
-        await window.api.feature.settings.removeApiKey();
-        this.apiKey = null;
-        this.requestUpdate();
     }
 
     handleQuit() {
         console.log('Quit clicked');
-        window.api.window.quitApplication();
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('quit-application');
+        }
     }
 
     handleFirebaseLogout() {
         console.log('Firebase Logout clicked');
-        window.api.window.firebaseLogout();
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('firebase-logout');
+        }
     }
 
     async handleOllamaShutdown() {
         console.log('[SettingsView] Shutting down Ollama service...');
+        
+        if (!window.require) return;
+        
+        const { ipcRenderer } = window.require('electron');
         
         try {
             // Show loading state
             this.ollamaStatus = { ...this.ollamaStatus, running: false };
             this.requestUpdate();
             
-            const result = await window.api.feature.settings.shutdownOllama(false); // Graceful shutdown
+            const result = await ipcRenderer.invoke('settings:shutdown-ollama'); // Graceful shutdown
             
             if (result.success) {
                 console.log('[SettingsView] Ollama shut down successfully');
@@ -1135,139 +1160,329 @@ export class SettingsView extends LitElement {
         }
     }
 
+    //////// after_modelStateService ////////
+    render() {
+        if (this.isLoading) {
+            return html`
+                <div class="settings-container">
+                    <div class="loading-state">
+                        <div class="loading-spinner"></div>
+                        <span>Loading...</span>
+                    </div>
+                </div>
+            `;
+        }
 
-    //////// before_modelStateService ////////
-    // render() {
-    //     if (this.isLoading) {
-    //         return html`
-    //             <div class="settings-container">
-    //                 <div class="loading-state">
-    //                     <div class="loading-spinner"></div>
-    //                     <span>Loading...</span>
-    //                 </div>
-    //             </div>
-    //         `;
-    //     }
+        const loggedIn = !!this.firebaseUser;
 
-    //     const loggedIn = !!this.firebaseUser;
+        const apiKeyManagementHTML = html`
+            <div class="api-key-section">
+                ${Object.entries(this.providerConfig)
+                    .filter(([id, config]) => !id.includes('-glass'))
+                    .map(([id, config]) => {
+                        if (id === 'ollama') {
+                            // Special UI for Ollama
+                            return html`
+                                <div class="provider-key-group">
+                                    <label>${config.name} (Local)</label>
+                                    ${this.ollamaStatus.installed && this.ollamaStatus.running ? html`
+                                        <div style="padding: 8px; background: rgba(0,255,0,0.1); border-radius: 4px; font-size: 11px; color: rgba(0,255,0,0.8);">
+                                            ✓ Ollama is running
+                                        </div>
+                                        <button class="settings-button full-width danger" @click=${this.handleOllamaShutdown}>
+                                            Stop Ollama Service
+                                        </button>
+                                    ` : this.ollamaStatus.installed ? html`
+                                        <div style="padding: 8px; background: rgba(255,200,0,0.1); border-radius: 4px; font-size: 11px; color: rgba(255,200,0,0.8);">
+                                            ⚠ Ollama installed but not running
+                                        </div>
+                                        <button class="settings-button full-width" @click=${() => this.handleSaveKey(id)}>
+                                            Start Ollama
+                                        </button>
+                                    ` : html`
+                                        <div style="padding: 8px; background: rgba(255,100,100,0.1); border-radius: 4px; font-size: 11px; color: rgba(255,100,100,0.8);">
+                                            ✗ Ollama not installed
+                                        </div>
+                                        <button class="settings-button full-width" @click=${() => this.handleSaveKey(id)}>
+                                            Install & Setup Ollama
+                                        </button>
+                                    `}
+                                </div>
+                            `;
+                        }
+                        
+                        if (id === 'whisper') {
+                            // Special UI for Whisper with model selection
+                            const whisperModels = config.sttModels || [];
+                            const selectedWhisperModel = this.selectedStt && this.getProviderForModel('stt', this.selectedStt) === 'whisper' 
+                                ? this.selectedStt 
+                                : null;
+                            
+                            return html`
+                                <div class="provider-key-group">
+                                    <label>${config.name} (Local STT)</label>
+                                    ${this.apiKeys[id] === 'local' ? html`
+                                        <div style="padding: 8px; background: rgba(0,255,0,0.1); border-radius: 4px; font-size: 11px; color: rgba(0,255,0,0.8); margin-bottom: 8px;">
+                                            ✓ Whisper is enabled
+                                        </div>
+                                        
+                                        <!-- Whisper Model Selection Dropdown -->
+                                        <label style="font-size: 10px; margin-top: 8px;">Select Model:</label>
+                                        <select 
+                                            class="model-dropdown" 
+                                            style="width: 100%; padding: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; font-size: 11px; margin-bottom: 8px;"
+                                            @change=${(e) => this.handleWhisperModelSelect(e.target.value)}
+                                            .value=${selectedWhisperModel || ''}
+                                        >
+                                            <option value="">Choose a model...</option>
+                                            ${whisperModels.map(model => {
+                                                const isInstalling = this.installingModels[model.id] !== undefined;
+                                                const progress = this.installingModels[model.id] || 0;
+                                                
+                                                let statusText = '';
+                                                if (isInstalling) {
+                                                    statusText = ` (Downloading ${progress}%)`;
+                                                } else if (model.installed) {
+                                                    statusText = ' (Installed)';
+                                                }
+                                                
+                                                return html`
+                                                    <option value="${model.id}" ?disabled=${isInstalling}>
+                                                        ${model.name}${statusText}
+                                                    </option>
+                                                `;
+                                            })}
+                                        </select>
+                                        
+                                        ${Object.entries(this.installingModels).map(([modelId, progress]) => {
+                                            if (modelId.startsWith('whisper-') && progress !== undefined) {
+                                                return html`
+                                                    <div style="margin: 8px 0;">
+                                                        <div style="font-size: 10px; color: rgba(255,255,255,0.7); margin-bottom: 4px;">
+                                                            Downloading ${modelId}...
+                                                        </div>
+                                                        <div class="install-progress" style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
+                                                            <div class="install-progress-bar" style="height: 100%; background: rgba(0, 122, 255, 0.8); width: ${progress}%; transition: width 0.3s ease;"></div>
+                                                        </div>
+                                                    </div>
+                                                `;
+                                            }
+                                            return null;
+                                        })}
+                                        
+                                        <button class="settings-button full-width danger" @click=${() => this.handleClearKey(id)}>
+                                            Disable Whisper
+                                        </button>
+                                    ` : html`
+                                        <button class="settings-button full-width" @click=${() => this.handleSaveKey(id)}>
+                                            Enable Whisper STT
+                                        </button>
+                                    `}
+                                </div>
+                            `;
+                        }
+                        
+                        // Regular providers
+                        return html`
+                        <div class="provider-key-group">
+                            <label for="key-input-${id}">${config.name} API Key</label>
+                            <input type="password" id="key-input-${id}"
+                                placeholder=${loggedIn ? "Using Pickle's Key" : `Enter ${config.name} API Key`} 
+                                .value=${this.apiKeys[id] || ''}
+                            >
+                            <div class="key-buttons">
+                               <button class="settings-button" @click=${() => this.handleSaveKey(id)} >Save</button>
+                               <button class="settings-button danger" @click=${() => this.handleClearKey(id)} }>Clear</button>
+                            </div>
+                        </div>
+                        `;
+                    })}
+            </div>
+        `;
+        
+        const getModelName = (type, id) => {
+            const models = type === 'llm' ? this.availableLlmModels : this.availableSttModels;
+            const model = models.find(m => m.id === id);
+            return model ? model.name : id;
+        }
 
-    //     return html`
-    //         <div class="settings-container">
-    //             <div class="header-section">
-    //                 <div>
-    //                     <h1 class="app-title">Pickle Glass</h1>
-    //                     <div class="account-info">
-    //                         ${this.firebaseUser
-    //                             ? html`Account: ${this.firebaseUser.email || 'Logged In'}`
-    //                             : this.apiKey && this.apiKey.length > 10
-    //                                 ? html`API Key: ${this.apiKey.substring(0, 6)}...${this.apiKey.substring(this.apiKey.length - 6)}`
-    //                                 : `Account: Not Logged In`
-    //                         }
-    //                     </div>
-    //                 </div>
-    //                 <div class="invisibility-icon ${this.isContentProtectionOn ? 'visible' : ''}" title="Invisibility is On">
-    //                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-    //                         <path d="M9.785 7.41787C8.7 7.41787 7.79 8.19371 7.55667 9.22621C7.0025 8.98704 6.495 9.05121 6.11 9.22037C5.87083 8.18204 4.96083 7.41787 3.88167 7.41787C2.61583 7.41787 1.58333 8.46204 1.58333 9.75121C1.58333 11.0404 2.61583 12.0845 3.88167 12.0845C5.08333 12.0845 6.06333 11.1395 6.15667 9.93787C6.355 9.79787 6.87417 9.53537 7.51 9.94954C7.615 11.1454 8.58333 12.0845 9.785 12.0845C11.0508 12.0845 12.0833 11.0404 12.0833 9.75121C12.0833 8.46204 11.0508 7.41787 9.785 7.41787ZM3.88167 11.4195C2.97167 11.4195 2.2425 10.6729 2.2425 9.75121C2.2425 8.82954 2.9775 8.08287 3.88167 8.08287C4.79167 8.08287 5.52083 8.82954 5.52083 9.75121C5.52083 10.6729 4.79167 11.4195 3.88167 11.4195ZM9.785 11.4195C8.875 11.4195 8.14583 10.6729 8.14583 9.75121C8.14583 8.82954 8.875 8.08287 9.785 8.08287C10.695 8.08287 11.43 8.82954 11.43 9.75121C11.43 10.6729 10.6892 11.4195 9.785 11.4195ZM12.6667 5.95954H1V6.83454H12.6667V5.95954ZM8.8925 1.36871C8.76417 1.08287 8.4375 0.931207 8.12833 1.03037L6.83333 1.46204L5.5325 1.03037L5.50333 1.02454C5.19417 0.93704 4.8675 1.10037 4.75083 1.39787L3.33333 5.08454H10.3333L8.91 1.39787L8.8925 1.36871Z" fill="white"/>
-    //                     </svg>
-    //                 </div>
-    //             </div>
+        const modelSelectionHTML = html`
+            <div class="model-selection-section">
+                <div class="model-select-group">
+                    <label>LLM Model: <strong>${getModelName('llm', this.selectedLlm) || 'Not Set'}</strong></label>
+                    <button class="settings-button full-width" @click=${() => this.toggleModelList('llm')} ?disabled=${this.saving || this.availableLlmModels.length === 0}>
+                        Change LLM Model
+                    </button>
+                    ${this.isLlmListVisible ? html`
+                        <div class="model-list">
+                            ${this.availableLlmModels.map(model => {
+                                const isOllama = this.getProviderForModel('llm', model.id) === 'ollama';
+                                const ollamaModel = isOllama ? this.ollamaModels.find(m => m.name === model.id) : null;
+                                const isInstalling = this.installingModels[model.id] !== undefined;
+                                const installProgress = this.installingModels[model.id] || 0;
+                                
+                                return html`
+                                    <div class="model-item ${this.selectedLlm === model.id ? 'selected' : ''}" 
+                                         @click=${() => this.selectModel('llm', model.id)}>
+                                        <span>${model.name}</span>
+                                        ${isOllama ? html`
+                                            ${isInstalling ? html`
+                                                <div class="install-progress">
+                                                    <div class="install-progress-bar" style="width: ${installProgress}%"></div>
+                                </div>
+                                            ` : ollamaModel?.installed ? html`
+                                                <span class="model-status installed">✓ Installed</span>
+                                            ` : html`
+                                                <span class="model-status not-installed">Click to install</span>
+                                            `}
+                                        ` : ''}
+                                    </div>
+                                `;
+                            })}
+                        </div>
+                    ` : ''}
+                </div>
+                <div class="model-select-group">
+                    <label>STT Model: <strong>${getModelName('stt', this.selectedStt) || 'Not Set'}</strong></label>
+                    <button class="settings-button full-width" @click=${() => this.toggleModelList('stt')} ?disabled=${this.saving || this.availableSttModels.length === 0}>
+                        Change STT Model
+                    </button>
+                    ${this.isSttListVisible ? html`
+                        <div class="model-list">
+                            ${this.availableSttModels.map(model => {
+                                const isWhisper = this.getProviderForModel('stt', model.id) === 'whisper';
+                                const isInstalling = this.installingModels[model.id] !== undefined;
+                                const installProgress = this.installingModels[model.id] || 0;
+                                
+                                return html`
+                                    <div class="model-item ${this.selectedStt === model.id ? 'selected' : ''}" 
+                                         @click=${() => this.selectModel('stt', model.id)}>
+                                        <span>${model.name}</span>
+                                        ${isWhisper && isInstalling ? html`
+                                            <div class="install-progress">
+                                                <div class="install-progress-bar" style="width: ${installProgress}%"></div>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `;
+                            })}
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
 
-    //             <div class="api-key-section">
-    //                 <input 
-    //                     type="password" 
-    //                     id="api-key-input"
-    //                     placeholder="Enter API Key" 
-    //                     .value=${this.apiKey || ''}
-    //                     ?disabled=${loggedIn}
-    //                 >
-    //                 <button class="settings-button full-width" @click=${this.handleSaveApiKey} ?disabled=${loggedIn}>
-    //                     Save API Key
-    //                 </button>
-    //             </div>
+        return html`
+            <div class="settings-container">
+                <div class="header-section">
+                    <div>
+                        <h1 class="app-title">Pickle Glass</h1>
+                        <div class="account-info">
+                            ${this.firebaseUser
+                                ? html`Account: ${this.firebaseUser.email || 'Logged In'}`
+                                : `Account: Not Logged In`
+                            }
+                        </div>
+                    </div>
+                    <div class="invisibility-icon ${this.isContentProtectionOn ? 'visible' : ''}" title="Invisibility is On">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M9.785 7.41787C8.7 7.41787 7.79 8.19371 7.55667 9.22621C7.0025 8.98704 6.495 9.05121 6.11 9.22037C5.87083 8.18204 4.96083 7.41787 3.88167 7.41787C2.61583 7.41787 1.58333 8.46204 1.58333 9.75121C1.58333 11.0404 2.61583 12.0845 3.88167 12.0845C5.08333 12.0845 6.06333 11.1395 6.15667 9.93787C6.355 9.79787 6.87417 9.53537 7.51 9.94954C7.615 11.1454 8.58333 12.0845 9.785 12.0845C11.0508 12.0845 12.0833 11.0404 12.0833 9.75121C12.0833 8.46204 11.0508 7.41787 9.785 7.41787ZM3.88167 11.4195C2.97167 11.4195 2.2425 10.6729 2.2425 9.75121C2.2425 8.82954 2.9775 8.08287 3.88167 8.08287C4.79167 8.08287 5.52083 8.82954 5.52083 9.75121C5.52083 10.6729 4.79167 11.4195 3.88167 11.4195ZM9.785 11.4195C8.875 11.4195 8.14583 10.6729 8.14583 9.75121C8.14583 8.82954 8.875 8.08287 9.785 8.08287C10.695 8.08287 11.43 8.82954 11.43 9.75121C11.43 10.6729 10.6892 11.4195 9.785 11.4195ZM12.6667 5.95954H1V6.83454H12.6667V5.95954ZM8.8925 1.36871C8.76417 1.08287 8.4375 0.931207 8.12833 1.03037L6.83333 1.46204L5.5325 1.03037L5.50333 1.02454C5.19417 0.93704 4.8675 1.10037 4.75083 1.39787L3.33333 5.08454H10.3333L8.91 1.39787L8.8925 1.36871Z" fill="white"/>
+                        </svg>
+                    </div>
+                </div>
 
-    //             <div class="shortcuts-section">
-    //                 ${this.getMainShortcuts().map(shortcut => html`
-    //                     <div class="shortcut-item">
-    //                         <span class="shortcut-name">${shortcut.name}</span>
-    //                         <div class="shortcut-keys">
-    //                             <span class="cmd-key">⌘</span>
-    //                             <span class="shortcut-key">${shortcut.key}</span>
-    //                         </div>
-    //                     </div>
-    //                 `)}
-    //             </div>
+                ${apiKeyManagementHTML}
+                ${modelSelectionHTML}
 
-    //             <!-- Preset Management Section -->
-    //             <div class="preset-section">
-    //                 <div class="preset-header">
-    //                     <span class="preset-title">
-    //                         My Presets
-    //                         <span class="preset-count">(${this.presets.filter(p => p.is_default === 0).length})</span>
-    //                     </span>
-    //                     <span class="preset-toggle" @click=${this.togglePresets}>
-    //                         ${this.showPresets ? '▼' : '▶'}
-    //                     </span>
-    //                 </div>
+                <div class="buttons-section" style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 6px; margin-top: 6px;">
+                    <button class="settings-button full-width" @click=${this.openShortcutEditor}>
+                        Edit Shortcuts
+                    </button>
+                </div>
+
+                
+                <div class="shortcuts-section">
+                    ${this.getMainShortcuts().map(shortcut => html`
+                        <div class="shortcut-item">
+                            <span class="shortcut-name">${shortcut.name}</span>
+                            <div class="shortcut-keys">
+                                ${this.renderShortcutKeys(shortcut.accelerator)}
+                            </div>
+                        </div>
+                    `)}
+                </div>
+
+                <div class="preset-section">
+                    <div class="preset-header">
+                        <span class="preset-title">
+                            My Presets
+                            <span class="preset-count">(${this.presets.filter(p => p.is_default === 0).length})</span>
+                        </span>
+                        <span class="preset-toggle" @click=${this.togglePresets}>
+                            ${this.showPresets ? '▼' : '▶'}
+                        </span>
+                    </div>
                     
-    //                 <div class="preset-list ${this.showPresets ? '' : 'hidden'}">
-    //                     ${this.presets.filter(p => p.is_default === 0).length === 0 ? html`
-    //                         <div class="no-presets-message">
-    //                             No custom presets yet.<br>
-    //                             <span class="web-link" @click=${this.handlePersonalize}>
-    //                                 Create your first preset
-    //                             </span>
-    //                         </div>
-    //                     ` : this.presets.filter(p => p.is_default === 0).map(preset => html`
-    //                         <div class="preset-item ${this.selectedPreset?.id === preset.id ? 'selected' : ''}"
-    //                              @click=${() => this.handlePresetSelect(preset)}>
-    //                             <span class="preset-name">${preset.title}</span>
-    //                             ${this.selectedPreset?.id === preset.id ? html`<span class="preset-status">Selected</span>` : ''}
-    //                         </div>
-    //                     `)}
-    //                 </div>
-    //             </div>
+                    <div class="preset-list ${this.showPresets ? '' : 'hidden'}">
+                        ${this.presets.filter(p => p.is_default === 0).length === 0 ? html`
+                            <div class="no-presets-message">
+                                No custom presets yet.<br>
+                                <span class="web-link" @click=${this.handlePersonalize}>
+                                    Create your first preset
+                                </span>
+                            </div>
+                        ` : this.presets.filter(p => p.is_default === 0).map(preset => html`
+                            <div class="preset-item ${this.selectedPreset?.id === preset.id ? 'selected' : ''}"
+                                 @click=${() => this.handlePresetSelect(preset)}>
+                                <span class="preset-name">${preset.title}</span>
+                                ${this.selectedPreset?.id === preset.id ? html`<span class="preset-status">Selected</span>` : ''}
+                            </div>
+                        `)}
+                    </div>
+                </div>
 
-    //             <div class="buttons-section">
-    //                 <button class="settings-button full-width" @click=${this.handlePersonalize}>
-    //                     <span>Personalize / Meeting Notes</span>
-    //                 </button>
+                <div class="buttons-section">
+                    <button class="settings-button full-width" @click=${this.handlePersonalize}>
+                        <span>Personalize / Meeting Notes</span>
+                    </button>
+                    <button class="settings-button full-width" @click=${this.handleToggleAutoUpdate} ?disabled=${this.autoUpdateLoading}>
+                        <span>Automatic Updates: ${this.autoUpdateEnabled ? 'On' : 'Off'}</span>
+                    </button>
                     
-    //                 <div class="move-buttons">
-    //                     <button class="settings-button half-width" @click=${this.handleMoveLeft}>
-    //                         <span>← Move</span>
-    //                     </button>
-    //                     <button class="settings-button half-width" @click=${this.handleMoveRight}>
-    //                         <span>Move →</span>
-    //                     </button>
-    //                 </div>
+                    <div class="move-buttons">
+                        <button class="settings-button half-width" @click=${this.handleMoveLeft}>
+                            <span>← Move</span>
+                        </button>
+                        <button class="settings-button half-width" @click=${this.handleMoveRight}>
+                            <span>Move →</span>
+                        </button>
+                    </div>
                     
-    //                 <button class="settings-button full-width" @click=${this.handleToggleInvisibility}>
-    //                     <span>${this.isContentProtectionOn ? 'Disable Invisibility' : 'Enable Invisibility'}</span>
-    //                 </button>
+                    <button class="settings-button full-width" @click=${this.handleToggleInvisibility}>
+                        <span>${this.isContentProtectionOn ? 'Disable Invisibility' : 'Enable Invisibility'}</span>
+                    </button>
                     
-    //                 <div class="bottom-buttons">
-    //                     ${this.firebaseUser
-    //                         ? html`
-    //                             <button class="settings-button half-width danger" @click=${this.handleFirebaseLogout}>
-    //                                 <span>Logout</span>
-    //                             </button>
-    //                             `
-    //                         : html`
-    //                             <button class="settings-button half-width danger" @click=${this.handleClearApiKey}>
-    //                                 <span>Clear API Key</span>
-    //                             </button>
-    //                             `
-    //                     }
-    //                     <button class="settings-button half-width danger" @click=${this.handleQuit}>
-    //                         <span>Quit</span>
-    //                     </button>
-    //                 </div>
-    //             </div>
-    //         </div>
-    //     `;
-    // }
-    //////// before_modelStateService ////////
-
+                    <div class="bottom-buttons">
+                        ${this.firebaseUser
+                            ? html`
+                                <button class="settings-button half-width danger" @click=${this.handleFirebaseLogout}>
+                                    <span>Logout</span>
+                                </button>
+                                `
+                            : html`
+                                <button class="settings-button half-width" @click=${this.handleUsePicklesKey}>
+                                    <span>Login</span>
+                                </button>
+                                `
+                        }
+                        <button class="settings-button half-width danger" @click=${this.handleQuit}>
+                            <span>Quit</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
     //////// after_modelStateService ////////
 }
 

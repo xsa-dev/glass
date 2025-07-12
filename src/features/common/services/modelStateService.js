@@ -6,8 +6,11 @@ const encryptionService = require('./encryptionService');
 const providerSettingsRepository = require('../repositories/providerSettings');
 const userModelSelectionsRepository = require('../repositories/userModelSelections');
 
+// Import authService directly (singleton)
+const authService = require('./authService');
+
 class ModelStateService {
-    constructor(authService) {
+    constructor() {
         this.authService = authService;
         this.store = new Store({ name: 'pickle-glass-model-state' });
         this.state = {};
@@ -506,6 +509,45 @@ class ModelStateService {
         }
     }
 
+    getProviderConfig() {
+        const serializableProviders = {};
+        for (const key in PROVIDERS) {
+            const { handler, ...rest } = PROVIDERS[key];
+            serializableProviders[key] = rest;
+        }
+        return serializableProviders;
+    }
+
+    async handleValidateKey(provider, key) {
+        const result = await this.validateApiKey(provider, key);
+        if (result.success) {
+            // Use 'local' as placeholder for local services
+            const finalKey = (provider === 'ollama' || provider === 'whisper') ? 'local' : key;
+            this.setApiKey(provider, finalKey);
+            // After setting the key, auto-select models
+            this._autoSelectAvailableModels();
+            this._saveState(); // Ensure state is saved after model selection
+        }
+        return result;
+    }
+
+    async handleRemoveApiKey(provider) {
+        const success = this.removeApiKey(provider);
+        if (success) {
+            const selectedModels = this.getSelectedModels();
+            if (!selectedModels.llm || !selectedModels.stt) {
+                webContents.getAllWebContents().forEach(wc => {
+                    wc.send('force-show-apikey-header');
+                });
+            }
+        }
+        return success;
+    }
+
+    async handleSetSelectedModel(type, modelId) {
+        return this.setSelectedModel(type, modelId);
+    }
+
     /**
      * 
      * @param {('llm' | 'stt')} type
@@ -528,18 +570,7 @@ class ModelStateService {
     }
     
     setupIpcHandlers() {
-        ipcMain.handle('model:validate-key', async (e, { provider, key }) => {
-            const result = await this.validateApiKey(provider, key);
-            if (result.success) {
-                // Use 'local' as placeholder for local services
-                const finalKey = (provider === 'ollama' || provider === 'whisper') ? 'local' : key;
-                this.setApiKey(provider, finalKey);
-                // After setting the key, auto-select models
-                this._autoSelectAvailableModels();
-                this._saveState(); // Ensure state is saved after model selection
-            }
-            return result;
-        });
+        ipcMain.handle('model:validate-key', async (e, { provider, key }) => this.handleValidateKey(provider, key));
         ipcMain.handle('model:get-all-keys', () => this.getAllApiKeys());
         ipcMain.handle('model:set-api-key', async (e, { provider, key }) => {
             const success = this.setApiKey(provider, key);
@@ -549,33 +580,17 @@ class ModelStateService {
             }
             return success;
         });
-        ipcMain.handle('model:remove-api-key', async (e, { provider }) => {
-            const success = this.removeApiKey(provider);
-            if (success) {
-                const selectedModels = this.getSelectedModels();
-                if (!selectedModels.llm || !selectedModels.stt) {
-                    webContents.getAllWebContents().forEach(wc => {
-                        wc.send('force-show-apikey-header');
-                    });
-                }
-            }
-            return success;
-        });
+        ipcMain.handle('model:remove-api-key', async (e, { provider }) => this.handleRemoveApiKey(provider));
         ipcMain.handle('model:get-selected-models', () => this.getSelectedModels());
-        ipcMain.handle('model:set-selected-model', async (e, { type, modelId }) => this.setSelectedModel(type, modelId));
+        ipcMain.handle('model:set-selected-model', async (e, { type, modelId }) => this.handleSetSelectedModel(type, modelId));
         ipcMain.handle('model:get-available-models', (e, { type }) => this.getAvailableModels(type));
         ipcMain.handle('model:are-providers-configured', () => this.areProvidersConfigured());
         ipcMain.handle('model:get-current-model-info', (e, { type }) => this.getCurrentModelInfo(type));
 
-        ipcMain.handle('model:get-provider-config', () => {
-            const serializableProviders = {};
-            for (const key in PROVIDERS) {
-                const { handler, ...rest } = PROVIDERS[key];
-                serializableProviders[key] = rest;
-            }
-            return serializableProviders;
-        });
+        ipcMain.handle('model:get-provider-config', () => this.getProviderConfig());
     }
 }
 
-module.exports = ModelStateService;
+// Export singleton instance
+const modelStateService = new ModelStateService();
+module.exports = modelStateService;

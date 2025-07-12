@@ -39,6 +39,26 @@ class OllamaService extends LocalAIServiceBase {
         this._startHealthMonitoring();
     }
 
+    async getStatus() {
+        try {
+            const installed = await this.isInstalled();
+            if (!installed) {
+                return { success: true, installed: false, running: false, models: [] };
+            }
+
+            const running = await this.isServiceRunning();
+            if (!running) {
+                return { success: true, installed: true, running: false, models: [] };
+            }
+
+            const models = await this.getInstalledModels();
+            return { success: true, installed: true, running: true, models };
+        } catch (error) {
+            console.error('[OllamaService] Error getting status:', error);
+            return { success: false, error: error.message, installed: false, running: false, models: [] };
+        }
+    }
+
     getOllamaCliPath() {
         if (this.getPlatform() === 'darwin') {
             return '/Applications/Ollama.app/Contents/Resources/ollama';

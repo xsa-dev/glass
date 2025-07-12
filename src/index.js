@@ -25,7 +25,7 @@ const { EventEmitter } = require('events');
 const askService = require('./features/ask/askService');
 const settingsService = require('./features/settings/settingsService');
 const sessionRepository = require('./features/common/repositories/session');
-const ModelStateService = require('./features/common/services/modelStateService');
+const modelStateService = require('./features/common/services/modelStateService');
 const sqliteClient = require('./features/common/services/sqliteClient');
 const featureBridge = require('./bridge/featureBridge');
 
@@ -39,7 +39,6 @@ const listenService = new ListenService();
 global.listenService = listenService;
 
 //////// after_modelStateService ////////
-const modelStateService = new ModelStateService(authService);
 global.modelStateService = modelStateService;
 //////// after_modelStateService ////////
 
@@ -331,8 +330,7 @@ app.on('activate', () => {
 });
 
 function setupWhisperIpcHandlers() {
-    const { WhisperService } = require('./features/common/services/whisperService');
-    const whisperService = new WhisperService();
+    const whisperService = require('./features/common/services/whisperService');
     
     // Forward download progress events to renderer
     whisperService.on('downloadProgress', (data) => {
