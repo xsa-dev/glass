@@ -74,10 +74,8 @@ export class PickleGlassApp extends LitElement {
     connectedCallback() {
         super.connectedCallback();
         
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            
-            ipcRenderer.on('click-through-toggled', (_, isEnabled) => {
+        if (window.api) {
+            window.api.pickleGlassApp.onClickThroughToggled((_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
         }
@@ -85,9 +83,8 @@ export class PickleGlassApp extends LitElement {
 
     disconnectedCallback() {
         super.disconnectedCallback();
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeAllListeners('click-through-toggled');
+        if (window.api) {
+            window.api.pickleGlassApp.removeAllClickThroughListeners();
         }
     }
 
@@ -121,9 +118,8 @@ export class PickleGlassApp extends LitElement {
     }
 
     async handleClose() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('quit-application');
+        if (window.api) {
+            await window.api.common.quitApplication();
         }
     }
 

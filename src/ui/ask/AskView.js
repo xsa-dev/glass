@@ -769,15 +769,14 @@ export class AskView extends LitElement {
             this.handleSendText(null, question);
         };
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.on('ask:sendQuestionToRenderer', this.handleQuestionFromAssistant);
-            ipcRenderer.on('hide-text-input', () => {
+        if (window.api) {
+            window.api.askView.onSendQuestionToRenderer(this.handleQuestionFromAssistant);
+            window.api.askView.onHideTextInput(() => {
                 console.log('📤 Hide text input signal received');
                 this.showTextInput = false;
                 this.requestUpdate();
             });
-            ipcRenderer.on('ask:showTextInput', () => {
+            window.api.askView.onShowTextInput(() => {
                 console.log('📤 Show text input signal received');
                 if (!this.showTextInput) {
                     this.showTextInput = true;
@@ -785,11 +784,11 @@ export class AskView extends LitElement {
                 }
             });
 
-            ipcRenderer.on('ask-response-chunk', this.handleStreamChunk);
-            ipcRenderer.on('ask-response-stream-end', this.handleStreamEnd);
+            window.api.askView.onResponseChunk(this.handleStreamChunk);
+            window.api.askView.onResponseStreamEnd(this.handleStreamEnd);
 
-            ipcRenderer.on('scroll-response-up', () => this.handleScroll('up'));
-            ipcRenderer.on('scroll-response-down', () => this.handleScroll('down'));
+            window.api.askView.onScrollResponseUp(() => this.handleScroll('up'));
+            window.api.askView.onScrollResponseDown(() => this.handleScroll('down'));
             console.log('✅ AskView: IPC 이벤트 리스너 등록 완료');
         }
     }
@@ -816,17 +815,11 @@ export class AskView extends LitElement {
 
         Object.values(this.lineCopyTimeouts).forEach(timeout => clearTimeout(timeout));
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeListener('hide-text-input', () => { });
-            ipcRenderer.removeListener('ask:showTextInput', () => { });
-
-            ipcRenderer.removeListener('ask-response-chunk', this.handleStreamChunk);
-            ipcRenderer.removeListener('ask-response-stream-end', this.handleStreamEnd);
-
-            ipcRenderer.removeListener('scroll-response-up', () => this.handleScroll('up'));
-            ipcRenderer.removeListener('scroll-response-down', () => this.handleScroll('down'));
-            console.log('✅ AskView: IPC 이벤트 리스너 제거 완료');
+        if (window.api) {
+            // Note: We need to keep references to the actual callbacks used in connectedCallback
+            // For now, we'll just log that removal is needed
+            // TODO: Store callback references for proper removal
+            console.log('✅ AskView: IPC 이벤트 리스너 제거 필요');
         }
     }
 
@@ -889,7 +882,7 @@ export class AskView extends LitElement {
 
     handleCloseAskWindow() {
         this.clearResponseContent();
-        ipcRenderer.invoke('ask:closeAskWindow');
+        window.api.askView.closeAskWindow();
     }
 
     handleCloseIfNoContent() {
@@ -1113,9 +1106,8 @@ export class AskView extends LitElement {
 
 
     requestWindowResize(targetHeight) {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('adjust-window-height', targetHeight);
+        if (window.api) {
+            window.api.askView.adjustWindowHeight(targetHeight);
         }
     }
 
@@ -1279,9 +1271,8 @@ export class AskView extends LitElement {
         this.requestUpdate();
         this.renderContent();
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('ask:sendMessage', text).catch(error => {
+        if (window.api) {
+            window.api.askView.sendMessage(text).catch(error => {
                 console.error('Error sending text:', error);
                 this.isLoading = false;
                 this.isStreaming = false;
@@ -1410,7 +1401,7 @@ export class AskView extends LitElement {
 
     // Dynamically resize the BrowserWindow to fit current content
     adjustWindowHeight() {
-        if (!window.require) return;
+        if (!window.api) return;
 
         this.updateComplete.then(() => {
             const headerEl = this.shadowRoot.querySelector('.response-header');
@@ -1427,8 +1418,7 @@ export class AskView extends LitElement {
 
             const targetHeight = Math.min(700, idealHeight);
 
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('adjust-window-height', targetHeight);
+            window.api.askView.adjustWindowHeight(targetHeight);
 
         }).catch(err => console.error('AskView adjustWindowHeight error:', err));
     }

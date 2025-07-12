@@ -2,10 +2,10 @@ export class LocalProgressTracker {
     constructor(serviceName) {
         this.serviceName = serviceName;
         this.activeOperations = new Map(); // operationId -> { controller, onProgress }
-        this.ipcRenderer = window.require?.('electron')?.ipcRenderer;
         
-        if (!this.ipcRenderer) {
-            throw new Error(`${serviceName} requires Electron environment`);
+        // Check if we're in renderer process with window.api available
+        if (!window.api) {
+            throw new Error(`${serviceName} requires Electron environment with contextBridge`);
         }
         
         this.globalProgressHandler = (event, data) => {
@@ -15,14 +15,14 @@ export class LocalProgressTracker {
             }
         };
         
-        const progressEvents = {
-            'ollama': 'ollama:pull-progress',
-            'whisper': 'whisper:download-progress'
-        };
+        // Set up progress listeners based on service name
+        if (serviceName.toLowerCase() === 'ollama') {
+            window.api.settingsView.onOllamaPullProgress(this.globalProgressHandler);
+        } else if (serviceName.toLowerCase() === 'whisper') {
+            window.api.settingsView.onWhisperDownloadProgress(this.globalProgressHandler);
+        }
         
-        const eventName = progressEvents[serviceName.toLowerCase()] || `${serviceName}:progress`;
-        this.progressEvent = eventName;
-        this.ipcRenderer.on(eventName, this.globalProgressHandler);
+        this.progressEvent = serviceName.toLowerCase();
     }
 
     async trackOperation(operationId, operationType, onProgress) {
@@ -35,15 +35,16 @@ export class LocalProgressTracker {
         this.activeOperations.set(operationId, operation);
 
         try {
-            const ipcChannels = {
-                'ollama': { install: 'ollama:pull-model' },
-                'whisper': { download: 'whisper:download-model' }
-            };
+            let result;
             
-            const channel = ipcChannels[this.serviceName.toLowerCase()]?.[operationType] || 
-                           `${this.serviceName}:${operationType}`;
-            
-            const result = await this.ipcRenderer.invoke(channel, operationId);
+            // Use appropriate API call based on service and operation
+            if (this.serviceName.toLowerCase() === 'ollama' && operationType === 'install') {
+                result = await window.api.settingsView.pullOllamaModel(operationId);
+            } else if (this.serviceName.toLowerCase() === 'whisper' && operationType === 'download') {
+                result = await window.api.settingsView.downloadWhisperModel(operationId);
+            } else {
+                throw new Error(`Unsupported operation: ${this.serviceName}:${operationType}`);
+            }
             
             if (!result.success) {
                 throw new Error(result.error || `${operationType} failed`);
@@ -93,8 +94,12 @@ export class LocalProgressTracker {
 
     destroy() {
         this.cancelAllOperations();
-        if (this.ipcRenderer) {
-            this.ipcRenderer.removeListener(this.progressEvent, this.globalProgressHandler);
+        
+        // Remove progress listeners based on service name
+        if (this.progressEvent === 'ollama') {
+            window.api.settingsView.removeOnOllamaPullProgress(this.globalProgressHandler);
+        } else if (this.progressEvent === 'whisper') {
+            window.api.settingsView.removeOnWhisperDownloadProgress(this.globalProgressHandler);
         }
     }
 }

@@ -92,7 +92,11 @@ function createFeatureWindows(header, namesToCreate) {
         skipTaskbar: true,
         hiddenInMissionControl: true,
         resizable: true,
-        webPreferences: { nodeIntegration: true, contextIsolation: false },
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, '../preload.js'),
+        },
     };
 
     const createFeatureWindow = (name) => {
@@ -377,8 +381,9 @@ function createWindows() {
         focusable: true,
         acceptFirstMouse: true,
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false,
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, '../preload.js'),
             backgroundThrottling: false,
             webSecurity: false,
             enableRemoteModule: false,
@@ -417,6 +422,21 @@ function createWindows() {
     });
 
     setupIpcHandlers(movementManager);
+    
+    // Content protection helper functions
+    const getContentProtectionStatus = () => isContentProtectionOn;
+    const setContentProtection = (status) => {
+        isContentProtectionOn = status;
+        console.log(`[Protection] Content protection toggled to: ${isContentProtectionOn}`);
+        windowPool.forEach(win => {
+            if (win && !win.isDestroyed()) {
+                win.setContentProtection(isContentProtectionOn);
+            }
+        });
+    };
+    
+    // Initialize windowBridge with required dependencies
+    windowBridge.initialize(windowPool, require('electron').app, require('electron').shell, getCurrentDisplay, createFeatureWindows, movementManager, getContentProtectionStatus, setContentProtection, updateLayout);
 
     if (currentHeaderState === 'main') {
         createFeatureWindows(header, ['listen', 'ask', 'settings', 'shortcut-settings']);
@@ -484,6 +504,8 @@ function loadAndRegisterShortcuts(movementManager) {
 function setupIpcHandlers(movementManager) {
     setupApiKeyIPC();
 
+    // quit-application handler moved to windowBridge.js to avoid duplication
+
     screen.on('display-added', (event, newDisplay) => {
         console.log('[Display] New display added:', newDisplay.id);
     });
@@ -502,20 +524,7 @@ function setupIpcHandlers(movementManager) {
         updateLayout();
     });
 
-    ipcMain.handle('toggle-content-protection', () => {
-        isContentProtectionOn = !isContentProtectionOn;
-        console.log(`[Protection] Content protection toggled to: ${isContentProtectionOn}`);
-        windowPool.forEach(win => {
-            if (win && !win.isDestroyed()) {
-                win.setContentProtection(isContentProtectionOn);
-            }
-        });
-        return isContentProtectionOn;
-    });
-
-    ipcMain.handle('get-content-protection-status', () => {
-        return isContentProtectionOn;
-    });
+    // Content protection handlers moved to windowBridge.js to avoid duplication
 
     ipcMain.on('header-state-changed', (event, state) => {
         console.log(`[WindowManager] Header state changed to: ${state}`);
@@ -539,16 +548,7 @@ function setupIpcHandlers(movementManager) {
         return { ...defaultKeybinds, ...savedKeybinds };
     });
 
-    ipcMain.handle('open-shortcut-editor', () => {
-        const header = windowPool.get('header');
-        if (!header) return;
-        
-        // 편집기 열기 전 모든 단축키 비활성화
-        globalShortcut.unregisterAll();
-        console.log('[Shortcuts] Disabled for editing.');
-
-        createFeatureWindows(header, 'shortcut-settings');
-    });
+    // open-shortcut-editor handler moved to windowBridge.js to avoid duplication
 
     ipcMain.handle('get-default-shortcuts', () => {
         shortCutStore.set('customKeybinds', {});
@@ -590,56 +590,7 @@ function setupIpcHandlers(movementManager) {
         }
     });
 
-    ipcMain.handle('resize-header-window', (event, { width, height }) => {
-        const header = windowPool.get('header');
-        if (header) {
-            console.log(`[WindowManager] Resize request: ${width}x${height}`);
-            
-            // Prevent resizing during animations or if already at target size
-            if (movementManager && movementManager.isAnimating) {
-                console.log('[WindowManager] Skipping resize during animation');
-                return { success: false, error: 'Cannot resize during animation' };
-            }
-
-            const currentBounds = header.getBounds();
-            console.log(`[WindowManager] Current bounds: ${currentBounds.width}x${currentBounds.height} at (${currentBounds.x}, ${currentBounds.y})`);
-            
-            // Skip if already at target size to prevent unnecessary operations
-            if (currentBounds.width === width && currentBounds.height === height) {
-                console.log('[WindowManager] Already at target size, skipping resize');
-                return { success: true };
-            }
-
-            const wasResizable = header.isResizable();
-            if (!wasResizable) {
-                header.setResizable(true);
-            }
-
-            // Calculate the center point of the current window
-            const centerX = currentBounds.x + currentBounds.width / 2;
-            // Calculate new X position to keep the window centered
-            const newX = Math.round(centerX - width / 2);
-
-            // Get the current display to ensure we stay within bounds
-            const display = getCurrentDisplay(header);
-            const { x: workAreaX, width: workAreaWidth } = display.workArea;
-            
-            // Clamp the new position to stay within display bounds
-            const clampedX = Math.max(workAreaX, Math.min(workAreaX + workAreaWidth - width, newX));
-
-            header.setBounds({ x: clampedX, y: currentBounds.y, width, height });
-
-            if (!wasResizable) {
-                header.setResizable(false);
-            }
-            
-            // Update layout after resize
-            updateLayout();
-            
-            return { success: true };
-        }
-        return { success: false, error: 'Header window not found' };
-    });
+    // resize-header-window handler moved to windowBridge.js to avoid duplication
 
     ipcMain.on('header-animation-finished', (event, state) => {
         const header = windowPool.get('header');
@@ -706,11 +657,7 @@ function setupIpcHandlers(movementManager) {
     });
 
 
-    ipcMain.handle('move-window-step', (event, direction) => {
-        if (movementManager) {
-            movementManager.moveStep(direction);
-        }
-    });
+    // move-window-step handler moved to windowBridge.js to avoid duplication
 
     ipcMain.handle('adjust-window-height', (event, targetHeight) => {
         const senderWindow = BrowserWindow.fromWebContents(event.sender);
@@ -791,6 +738,8 @@ function setupIpcHandlers(movementManager) {
             };
         }
     });
+
+    // firebase-logout handler moved to windowBridge.js to avoid duplication
 
     ipcMain.handle('check-system-permissions', async () => {
         const { systemPreferences } = require('electron');
@@ -928,70 +877,6 @@ function setupIpcHandlers(movementManager) {
             win.hide();
         }
     });
-
-    ipcMain.on('show-settings-window', (event, bounds) => {
-        if (!bounds) return;  
-        const win = windowPool.get('settings');
-
-        if (win && !win.isDestroyed()) {
-            console.log('[WindowManager] Showing settings window');
-            if (settingsHideTimer) {
-                clearTimeout(settingsHideTimer);
-                settingsHideTimer = null;
-            }
-
-            // Adjust position based on button bounds
-            const header = windowPool.get('header');
-            const headerBounds = header?.getBounds() ?? { x: 0, y: 0 };
-            const settingsBounds = win.getBounds();
-
-            const disp = getCurrentDisplay(header);
-            const { x: waX, y: waY, width: waW, height: waH } = disp.workArea;
-
-            let x = Math.round(headerBounds.x + (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2 - settingsBounds.width / 2);
-            let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 31);
-
-            x = Math.max(waX + 10, Math.min(waX + waW - settingsBounds.width - 10, x));
-            y = Math.max(waY + 10, Math.min(waY + waH - settingsBounds.height - 10, y));
-
-            win.setBounds({ x, y });
-            win.__lockedByButton = true;
-            console.log(`[WindowManager] Positioning settings window at (${x}, ${y}) based on button bounds.`);
-            
-            win.show();
-            win.moveTop();
-            win.setAlwaysOnTop(true);
-            console.log('[WindowManager] Settings window shown');
-        } else {
-            console.log('[WindowManager] Settings window not found');
-        }
-    });
-
-    ipcMain.on('hide-settings-window', (event) => {
-        const window = windowPool.get("settings");
-        if (window && !window.isDestroyed()) {
-            if (settingsHideTimer) {
-                clearTimeout(settingsHideTimer);
-            }
-            settingsHideTimer = setTimeout(() => {
-                if (window && !window.isDestroyed()) {
-                    window.setAlwaysOnTop(false);
-                    window.hide();
-                }
-                settingsHideTimer = null;
-            }, 200);
-            
-            window.__lockedByButton = false;
-        }
-    });
-
-    ipcMain.on('cancel-hide-settings-window', (event) => {
-        if (settingsHideTimer) {
-            clearTimeout(settingsHideTimer);
-            settingsHideTimer = null;
-        }
-    });
-
 
 
     ipcMain.handle('ask:closeAskWindow', async () => {
@@ -1193,13 +1078,13 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
         console.log('[Shortcuts] Broadcasted updated shortcuts to all windows.');
     }
     
-    // ✨ 하드코딩된 단축키 등록을 위해 변수 유지
+    // 하드코딩된 단축키 등록을 위해 변수 유지
     const isMac = process.platform === 'darwin';
     const modifier = isMac ? 'Cmd' : 'Ctrl';
     const header = windowPool.get('header');
     const state = header?.currentHeaderState || currentHeaderState;
 
-    // ✨ 기능 1: 사용자가 설정할 수 없는 '모니터 이동' 단축키 (기존 로직 유지)
+    // 기능 1: 사용자가 설정할 수 없는 '모니터 이동' 단축키 (기존 로직 유지)
     const displays = screen.getAllDisplays();
     if (displays.length > 1) {
         displays.forEach((display, index) => {
@@ -1226,7 +1111,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
         return;
     }
 
-    // ✨ 기능 2: 사용자가 설정할 수 없는 '화면 가장자리 이동' 단축키 (기존 로직 유지)
+    // 기능 2: 사용자가 설정할 수 없는 '화면 가장자리 이동' 단축키 (기존 로직 유지)
     const edgeDirections = [
         { key: `${modifier}+Shift+Left`, direction: 'left' },
         { key: `${modifier}+Shift+Right`, direction: 'right' },
@@ -1244,7 +1129,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
     });
 
 
-    // ✨ 기능 3: 사용자가 설정 가능한 모든 단축키를 동적으로 등록 (새로운 방식 적용)
+    // 기능 3: 사용자가 설정 가능한 모든 단축키를 동적으로 등록 (새로운 방식 적용)
     for (const action in keybinds) {
         const accelerator = keybinds[action];
         if (!accelerator) continue;
