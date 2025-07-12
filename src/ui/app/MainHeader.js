@@ -4,8 +4,8 @@ export class MainHeader extends LitElement {
     static properties = {
         // isSessionActive: { type: Boolean, state: true },
         isTogglingSession: { type: Boolean, state: true },
-        actionText: { type: String, state: true },
         shortcuts: { type: Object, state: true },
+        listenSessionStatus: { type: String, state: true },
     };
 
     static styles = css`
@@ -348,15 +348,23 @@ export class MainHeader extends LitElement {
         this.isAnimating = false;
         this.hasSlidIn = false;
         this.settingsHideTimer = null;
-        // this.isSessionActive = false;
         this.isTogglingSession = false;
-        this.actionText = 'Listen';
+        this.listenSessionStatus = 'beforeSession';
         this.animationEndTimer = null;
         this.handleAnimationEnd = this.handleAnimationEnd.bind(this);
         this.handleMouseMove = this.handleMouseMove.bind(this);
         this.handleMouseUp = this.handleMouseUp.bind(this);
         this.dragState = null;
         this.wasJustDragged = false;
+    }
+
+    _getListenButtonText(status) {
+        switch (status) {
+            case 'beforeSession': return 'Listen';
+            case 'inSession'   : return 'Stop';
+            case 'afterSession': return 'Done';
+            default            : return 'Listen';
+        }
     }
 
     async handleMouseDown(e) {
@@ -469,18 +477,20 @@ export class MainHeader extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
 
-            this._sessionStateTextListener = (event, text) => {
-                this.actionText = text;
-                this.isTogglingSession = false;
+            this._sessionStateTextListener = (event, { success }) => {
+                if (success) {
+                    this.listenSessionStatus = ({
+                        beforeSession: 'inSession',
+                        inSession: 'afterSession',
+                        afterSession: 'beforeSession',
+                    })[this.listenSessionStatus] || 'beforeSession';
+                } else {
+                    this.listenSessionStatus = 'beforeSession';
+                }
+                this.isTogglingSession = false; // ✨ 로딩 상태만 해제
             };
-            ipcRenderer.on('session-state-text', this._sessionStateTextListener);
+            ipcRenderer.on('listen:changeSessionResult', this._sessionStateTextListener);
 
-
-            // this._sessionStateListener = (event, { isActive }) => {
-            //     this.isSessionActive = isActive;
-            //     this.isTogglingSession = false;
-            // };
-            // ipcRenderer.on('session-state-changed', this._sessionStateListener);
             this._shortcutListener = (event, keybinds) => {
                 console.log('[MainHeader] Received updated shortcuts:', keybinds);
                 this.shortcuts = keybinds;
@@ -501,11 +511,8 @@ export class MainHeader extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             if (this._sessionStateTextListener) {
-                ipcRenderer.removeListener('session-state-text', this._sessionStateTextListener);
+                ipcRenderer.removeListener('listen:changeSessionResult', this._sessionStateTextListener);
             }
-            // if (this._sessionStateListener) {
-            //     ipcRenderer.removeListener('session-state-changed', this._sessionStateListener);
-            // }
             if (this._shortcutListener) {
                 ipcRenderer.removeListener('shortcuts-updated', this._shortcutListener);
             }
@@ -557,11 +564,11 @@ export class MainHeader extends LitElement {
         this.isTogglingSession = true;
 
         try {
-            const channel = 'toggle-feature';
-            const args = ['listen'];
-            await this.invoke(channel, ...args);
+            const channel = 'listen:changeSession';
+            const listenButtonText = this._getListenButtonText(this.listenSessionStatus);
+            await this.invoke(channel, listenButtonText);
         } catch (error) {
-            console.error('IPC invoke for session toggle failed:', error);
+            console.error('IPC invoke for session change failed:', error);
             this.isTogglingSession = false;
         }
     }
@@ -591,11 +598,13 @@ export class MainHeader extends LitElement {
     }
 
     render() {
+        const listenButtonText = this._getListenButtonText(this.listenSessionStatus);
+    
         const buttonClasses = {
-            active: this.actionText === 'Stop',
-            done: this.actionText === 'Done',
+            active: listenButtonText === 'Stop',
+            done: listenButtonText === 'Done',
         };
-        const showStopIcon = this.actionText === 'Stop' || this.actionText === 'Done';
+        const showStopIcon = listenButtonText === 'Stop' || listenButtonText === 'Done';
 
         return html`
             <div class="header" @mousedown=${this.handleMouseDown}>
@@ -612,7 +621,7 @@ export class MainHeader extends LitElement {
                         `
                         : html`
                             <div class="action-text">
-                                <div class="action-text-content">${this.actionText}</div>
+                                <div class="action-text-content">${listenButtonText}</div>
                             </div>
                             <div class="listen-icon">
                                 ${showStopIcon

@@ -29,6 +29,21 @@ module.exports = {
     });
     
     console.log('[FeatureBridge] Initialized with settings handlers.');
+
+    
+    ipcMain.handle('listen:changeSession', async (event, listenButtonText) => {
+      console.log('[FeatureBridge] listen:changeSession from mainheader', listenButtonText);
+      try {
+        await listenService.handleListenRequest(listenButtonText);
+        return { success: true };
+      } catch (error) {
+        console.error('[FeatureBridge] listen:changeSession failed', error.message);
+        return { success: false, error: error.message };
+      }
+    });
+
+
+
   },
 
   // Renderer로 상태를 전송

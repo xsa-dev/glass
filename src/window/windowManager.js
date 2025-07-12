@@ -1025,6 +1025,47 @@ function setupIpcHandlers(movementManager) {
         toggleFeature('ask', {ask: { questionText: question }});
         return { success: true };
     });
+
+    // ipcMain.handle('listen:changeSession', async (event, actionText) => {
+    //     console.log('📨 Main process: Received actionText', actionText);
+    //     const header = windowPool.get('header');
+    //     const listenWindow = windowPool.get('listen');
+
+    //     try {
+    //         if (listenService && listenService.isSessionActive()) {
+    //             console.log('[WindowManager] Listen session is active, closing it.');
+    //             // ✨ closeSession도 비동기일 수 있으므로 await 처리 (만약 동기 함수라면 await는 무시됨)
+    //             await listenService.closeSession();
+    //             listenWindow.webContents.send('session-state-changed', { isActive: false });
+    //         } else {
+    //             if (listenWindow.isVisible()) {
+    //                 listenWindow.webContents.send('window-hide-animation');
+    //                 listenWindow.webContents.send('session-state-changed', { isActive: false });
+    //             } else {
+    //                 listenWindow.show();
+    //                 updateLayout();
+    //                 listenWindow.webContents.send('window-show-animation');
+                    
+    //                 // ✨ 핵심: initializeSession 작업이 끝날 때까지 기다림
+    //                 await listenService.initializeSession(); 
+                    
+    //                 listenWindow.webContents.send('session-state-changed', { isActive: true });
+    //             }
+    //         }
+
+    //         // ✨ 모든 비동기 작업이 성공적으로 끝난 후 결과 전송
+    //         header.webContents.send('listen:changeSessionResult', { success: true });
+    //         return { success: true };
+
+    //     } catch (error) {
+    //         console.error('[WindowManager] Failed to change listen session:', error);
+            
+    //         // ✨ 작업 실패 시 UI에 실패 결과를 알려 로딩 상태를 해제하도록 함
+    //         header.webContents.send('listen:changeSessionResult', { success: false });
+    //         return { success: false, error: error.message };
+    //     }
+    // });
+
 }
 
 
@@ -1043,31 +1084,31 @@ async function toggleFeature(featureName, options = {}) {
     }
 
     const header = windowPool.get('header');
-    if (featureName === 'listen') {
-        console.log(`[WindowManager] Toggling feature: ${featureName}`);
-        const listenWindow = windowPool.get(featureName);
-        // const listenService = global.listenService;
-        if (listenService && listenService.isSessionActive()) {
-            console.log('[WindowManager] Listen session is active, closing it via toggle.');
-            await listenService.closeSession();
-            listenWindow.webContents.send('session-state-changed', { isActive: false });
-            header.webContents.send('session-state-text', 'Done');
-            // return;
-        } else {
-            if (listenWindow.isVisible()) {
-                listenWindow.webContents.send('window-hide-animation');
-                listenWindow.webContents.send('session-state-changed', { isActive: false });
-                header.webContents.send('session-state-text', 'Listen');
-            } else {
-                listenWindow.show();
-                updateLayout();
-                listenWindow.webContents.send('window-show-animation');
-                await listenService.initializeSession();
-                listenWindow.webContents.send('session-state-changed', { isActive: true });
-                header.webContents.send('session-state-text', 'Stop');
-            }
-        }
-    }
+    // if (featureName === 'listen') {
+    //     console.log(`[WindowManager] Toggling feature: ${featureName}`);
+    //     const listenWindow = windowPool.get(featureName);
+    //     // const listenService = global.listenService;
+    //     if (listenService && listenService.isSessionActive()) {
+    //         console.log('[WindowManager] Listen session is active, closing it via toggle.');
+    //         await listenService.closeSession();
+    //         listenWindow.webContents.send('session-state-changed', { isActive: false });
+    //         header.webContents.send('session-state-text', 'Done');
+    //         // return;
+    //     } else {
+    //         if (listenWindow.isVisible()) {
+    //             listenWindow.webContents.send('window-hide-animation');
+    //             listenWindow.webContents.send('session-state-changed', { isActive: false });
+    //             header.webContents.send('session-state-text', 'Listen');
+    //         } else {
+    //             listenWindow.show();
+    //             updateLayout();
+    //             listenWindow.webContents.send('window-show-animation');
+    //             await listenService.initializeSession();
+    //             listenWindow.webContents.send('session-state-changed', { isActive: true });
+    //             header.webContents.send('session-state-text', 'Stop');
+    //         }
+    //     }
+    // }
 
     if (featureName === 'ask') {
         let askWindow = windowPool.get('ask');
@@ -1428,6 +1469,7 @@ async function captureScreenshot(options = {}) {
 }
 
 module.exports = {
+    updateLayout,
     createWindows,
     windowPool,
     fixedYPosition,
