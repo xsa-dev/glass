@@ -1,8 +1,8 @@
-import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
+import { html, css, LitElement } from '../assets/lit-core-2.7.4.min.js';
 import './stt/SttView.js';
 import './summary/SummaryView.js';
 
-export class AssistantView extends LitElement {
+export class ListenView extends LitElement {
     static styles = css`
         :host {
             display: block;
@@ -689,4 +689,4 @@ export class AssistantView extends LitElement {
     }
 }
 
-customElements.define('assistant-view', AssistantView);
+customElements.define('listen-view', ListenView);

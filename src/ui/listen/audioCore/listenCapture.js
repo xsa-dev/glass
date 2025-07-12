@@ -1,5 +1,5 @@
 const { ipcRenderer } = require('electron');
-const createAecModule = require('../../../assets/aec.js');
+const createAecModule = require('./aec.js');
 
 let aecModPromise = null;     // 한 번만 로드
 let aecMod        = null;

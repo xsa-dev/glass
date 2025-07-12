@@ -2,7 +2,7 @@ const { ipcMain, BrowserWindow } = require('electron');
 const Store = require('electron-store');
 const authService = require('../../common/services/authService');
 const settingsRepository = require('./repositories');
-const { getStoredApiKey, getStoredProvider, windowPool } = require('../../electron/windowManager');
+const { getStoredApiKey, getStoredProvider, windowPool } = require('../../window/windowManager');
 
 const store = new Store({
     name: 'pickle-glass-settings',
