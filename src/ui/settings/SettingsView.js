@@ -543,11 +543,10 @@ export class SettingsView extends LitElement {
     }
 
     async loadAutoUpdateSetting() {
-        if (!window.require) return;
-        const { ipcRenderer } = window.require('electron');
+        if (!window.api) return;
         this.autoUpdateLoading = true;
         try {
-            const enabled = await ipcRenderer.invoke('settings:get-auto-update');
+            const enabled = await window.api.settingsView.getAutoUpdate();
             this.autoUpdateEnabled = enabled;
             console.log('Auto-update setting loaded:', enabled);
         } catch (e) {
@@ -559,13 +558,12 @@ export class SettingsView extends LitElement {
     }
 
     async handleToggleAutoUpdate() {
-        if (!window.require || this.autoUpdateLoading) return;
-        const { ipcRenderer } = window.require('electron');
+        if (!window.api || this.autoUpdateLoading) return;
         this.autoUpdateLoading = true;
         this.requestUpdate();
         try {
             const newValue = !this.autoUpdateEnabled;
-            const result = await ipcRenderer.invoke('settings:set-auto-update', newValue);
+            const result = await window.api.settingsView.setAutoUpdate(newValue);
             if (result && result.success) {
                 this.autoUpdateEnabled = newValue;
             } else {
@@ -580,18 +578,17 @@ export class SettingsView extends LitElement {
 
     //////// after_modelStateService ////////
     async loadInitialData() {
-        if (!window.require) return;
+        if (!window.api) return;
         this.isLoading = true;
-        const { ipcRenderer } = window.require('electron');
         try {
             const [userState, modelSettings, presets, contentProtection, shortcuts, ollamaStatus, whisperModelsResult] = await Promise.all([
-                ipcRenderer.invoke('get-current-user'),
-                ipcRenderer.invoke('settings:get-model-settings'), // Facade call
-                ipcRenderer.invoke('settings:getPresets'),
-                ipcRenderer.invoke('get-content-protection-status'),
-                ipcRenderer.invoke('get-current-shortcuts'),
-                ipcRenderer.invoke('settings:get-ollama-status'),
-                ipcRenderer.invoke('whisper:get-installed-models')
+                window.api.settingsView.getCurrentUser(),
+                window.api.settingsView.getModelSettings(), // Facade call
+                window.api.settingsView.getPresets(),
+                window.api.settingsView.getContentProtectionStatus(),
+                window.api.settingsView.getCurrentShortcuts(),
+                window.api.settingsView.getOllamaStatus(),
+                window.api.settingsView.getWhisperInstalledModels()
             ]);
             
             if (userState && userState.isLoggedIn) this.firebaseUser = userState;
@@ -646,10 +643,9 @@ export class SettingsView extends LitElement {
         // For Ollama, we need to ensure it's ready first
         if (provider === 'ollama') {
         this.saving = true;
-            const { ipcRenderer } = window.require('electron');
             
             // First ensure Ollama is installed and running
-            const ensureResult = await ipcRenderer.invoke('settings:ensure-ollama-ready');
+            const ensureResult = await window.api.settingsView.ensureOllamaReady();
             if (!ensureResult.success) {
                 alert(`Failed to setup Ollama: ${ensureResult.error}`);
                 this.saving = false;
@@ -657,7 +653,7 @@ export class SettingsView extends LitElement {
             }
             
             // Now validate (which will check if service is running)
-            const result = await ipcRenderer.invoke('settings:validate-and-save-key', { provider, key: 'local' });
+            const result = await window.api.settingsView.validateKey({ provider, key: 'local' });
             
             if (result.success) {
                 await this.refreshModelData();
@@ -672,8 +668,7 @@ export class SettingsView extends LitElement {
         // For Whisper, just enable it
         if (provider === 'whisper') {
             this.saving = true;
-            const { ipcRenderer } = window.require('electron');
-            const result = await ipcRenderer.invoke('settings:validate-and-save-key', { provider, key: 'local' });
+            const result = await window.api.settingsView.validateKey({ provider, key: 'local' });
             
             if (result.success) {
                 await this.refreshModelData();
@@ -686,8 +681,7 @@ export class SettingsView extends LitElement {
         
         // For other providers, use the normal flow
         this.saving = true;
-        const { ipcRenderer } = window.require('electron');
-        const result = await ipcRenderer.invoke('settings:validate-and-save-key', { provider, key });
+        const result = await window.api.settingsView.validateKey({ provider, key });
         
         if (result.success) {
             await this.refreshModelData();
@@ -700,23 +694,24 @@ export class SettingsView extends LitElement {
     
     async handleClearKey(provider) {
         this.saving = true;
-        const { ipcRenderer } = window.require('electron');
-        await ipcRenderer.invoke('settings:clear-api-key', { provider });
+        await window.api.settingsView.removeApiKey(provider);
+        this.apiKeys = { ...this.apiKeys, [provider]: '' };
         await this.refreshModelData();
         this.saving = false;
     }
 
     async refreshModelData() {
-        const { ipcRenderer } = window.require('electron');
-        const result = await ipcRenderer.invoke('settings:get-model-settings');
-        if (result.success) {
-            const { availableLlm, availableStt, selectedModels, storedKeys } = result.data;
-            this.availableLlmModels = availableLlm;
-            this.availableSttModels = availableStt;
-            this.selectedLlm = selectedModels.llm;
-            this.selectedStt = selectedModels.stt;
-            this.apiKeys = storedKeys;
-        }
+        const [availableLlm, availableStt, selected, storedKeys] = await Promise.all([
+            window.api.settingsView.getAvailableModels({ type: 'llm' }),
+            window.api.settingsView.getAvailableModels({ type: 'stt' }),
+            window.api.settingsView.getSelectedModels(),
+            window.api.settingsView.getAllKeys()
+        ]);
+        this.availableLlmModels = availableLlm;
+        this.availableSttModels = availableStt;
+        this.selectedLlm = selected.llm;
+        this.selectedStt = selected.stt;
+        this.apiKeys = storedKeys;
         this.requestUpdate();
     }
     
@@ -761,8 +756,7 @@ export class SettingsView extends LitElement {
         }
         
         this.saving = true;
-        const { ipcRenderer } = window.require('electron');
-        await ipcRenderer.invoke('settings:set-selected-model', { type, modelId });
+        await window.api.settingsView.setSelectedModel({ type, modelId });
         if (type === 'llm') this.selectedLlm = modelId;
         if (type === 'stt') this.selectedStt = modelId;
         this.isLlmListVisible = false;
@@ -772,8 +766,7 @@ export class SettingsView extends LitElement {
     }
     
     async refreshOllamaStatus() {
-        const { ipcRenderer } = window.require('electron');
-        const ollamaStatus = await ipcRenderer.invoke('settings:get-ollama-status');
+        const ollamaStatus = await window.api.settingsView.getOllamaStatus();
         if (ollamaStatus?.success) {
             this.ollamaStatus = { installed: ollamaStatus.installed, running: ollamaStatus.running };
             this.ollamaModels = ollamaStatus.models || [];
@@ -817,8 +810,6 @@ export class SettingsView extends LitElement {
         this.requestUpdate();
         
         try {
-            const { ipcRenderer } = window.require('electron');
-            
             // Set up progress listener
             const progressHandler = (event, { modelId: id, progress }) => {
                 if (id === modelId) {
@@ -827,10 +818,10 @@ export class SettingsView extends LitElement {
                 }
             };
             
-            ipcRenderer.on('whisper:download-progress', progressHandler);
+            window.api.settingsView.onWhisperDownloadProgress(progressHandler);
             
             // Start download
-            const result = await ipcRenderer.invoke('whisper:download-model', modelId);
+            const result = await window.api.settingsView.downloadWhisperModel(modelId);
             
             if (result.success) {
                 // Auto-select the model after download
@@ -840,7 +831,7 @@ export class SettingsView extends LitElement {
             }
             
             // Cleanup
-            ipcRenderer.removeListener('whisper:download-progress', progressHandler);
+            window.api.settingsView.removeOnWhisperDownloadProgress(progressHandler);
         } catch (error) {
             console.error(`[SettingsView] Error downloading Whisper model ${modelId}:`, error);
             alert(`Error downloading ${modelId}: ${error.message}`);
@@ -872,17 +863,12 @@ export class SettingsView extends LitElement {
         if (this.wasJustDragged) return
     
         console.log("Requesting Firebase authentication from main process...")
-        if (window.require) {
-          window.require("electron").ipcRenderer.invoke("start-firebase-auth")
-        }
-      }
+        window.api.settingsView.startFirebaseAuth();
+    }
     //////// after_modelStateService ////////
 
     openShortcutEditor() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('open-shortcut-editor');
-        }
+        window.api.settingsView.openShortcutEditor();
     }
 
     connectedCallback() {
@@ -920,9 +906,7 @@ export class SettingsView extends LitElement {
     }
 
     setupIpcListeners() {
-        if (!window.require) return;
-        
-        const { ipcRenderer } = window.require('electron');
+        if (!window.api) return;
         
         this._userStateListener = (event, userState) => {
             console.log('[SettingsView] Received user-state-changed:', userState);
@@ -945,7 +929,7 @@ export class SettingsView extends LitElement {
         this._presetsUpdatedListener = async (event) => {
             console.log('[SettingsView] Received presets-updated, refreshing presets');
             try {
-                const presets = await ipcRenderer.invoke('settings:getPresets');
+                const presets = await window.api.settingsView.getPresets();
                 this.presets = presets || [];
                 
                 // 현재 선택된 프리셋이 삭제되었는지 확인 (사용자 프리셋만 고려)
@@ -964,28 +948,26 @@ export class SettingsView extends LitElement {
             this.shortcuts = keybinds;
         };
         
-        ipcRenderer.on('user-state-changed', this._userStateListener);
-        ipcRenderer.on('settings-updated', this._settingsUpdatedListener);
-        ipcRenderer.on('presets-updated', this._presetsUpdatedListener);
-        ipcRenderer.on('shortcuts-updated', this._shortcutListener);
+        window.api.settingsView.onUserStateChanged(this._userStateListener);
+        window.api.settingsView.onSettingsUpdated(this._settingsUpdatedListener);
+        window.api.settingsView.onPresetsUpdated(this._presetsUpdatedListener);
+        window.api.settingsView.onShortcutsUpdated(this._shortcutListener);
     }
 
     cleanupIpcListeners() {
-        if (!window.require) return;
-        
-        const { ipcRenderer } = window.require('electron');
+        if (!window.api) return;
         
         if (this._userStateListener) {
-            ipcRenderer.removeListener('user-state-changed', this._userStateListener);
+            window.api.settingsView.removeOnUserStateChanged(this._userStateListener);
         }
         if (this._settingsUpdatedListener) {
-            ipcRenderer.removeListener('settings-updated', this._settingsUpdatedListener);
+            window.api.settingsView.removeOnSettingsUpdated(this._settingsUpdatedListener);
         }
         if (this._presetsUpdatedListener) {
-            ipcRenderer.removeListener('presets-updated', this._presetsUpdatedListener);
+            window.api.settingsView.removeOnPresetsUpdated(this._presetsUpdatedListener);
         }
         if (this._shortcutListener) {
-            ipcRenderer.removeListener('shortcuts-updated', this._shortcutListener);
+            window.api.settingsView.removeOnShortcutsUpdated(this._shortcutListener);
         }
     }
 
@@ -1019,17 +1001,11 @@ export class SettingsView extends LitElement {
     }
 
     handleMouseEnter = () => {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.send('cancel-hide-settings-window');
-        }
+        window.api.settingsView.cancelHideSettingsWindow();
     }
 
     handleMouseLeave = () => {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.send('hide-settings-window');
-        }
+        window.api.settingsView.hideSettingsWindow();
     }
 
     // getMainShortcuts() {
@@ -1079,70 +1055,76 @@ export class SettingsView extends LitElement {
 
     handleMoveLeft() {
         console.log('Move Left clicked');
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('move-window-step', 'left');
-        }
+        window.api.settingsView.moveWindowStep('left');
     }
 
     handleMoveRight() {
         console.log('Move Right clicked');
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('move-window-step', 'right');
-        }
+        window.api.settingsView.moveWindowStep('right');
     }
 
     async handlePersonalize() {
         console.log('Personalize clicked');
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            try {
-                await ipcRenderer.invoke('open-login-page');
-            } catch (error) {
-                console.error('Failed to open personalize page:', error);
-            }
+        try {
+            await window.api.settingsView.openLoginPage();
+        } catch (error) {
+            console.error('Failed to open personalize page:', error);
         }
     }
 
     async handleToggleInvisibility() {
         console.log('Toggle Invisibility clicked');
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            this.isContentProtectionOn = await ipcRenderer.invoke('toggle-content-protection');
-            this.requestUpdate();
+        this.isContentProtectionOn = await window.api.settingsView.toggleContentProtection();
+        this.requestUpdate();
+    }
+
+    async handleSaveApiKey() {
+        const input = this.shadowRoot.getElementById('api-key-input');
+        if (!input || !input.value) return;
+
+        const newApiKey = input.value;
+        try {
+            const result = await window.api.settingsView.saveApiKey(newApiKey);
+            if (result.success) {
+                console.log('API Key saved successfully via IPC.');
+                this.apiKey = newApiKey;
+                this.requestUpdate();
+            } else {
+                 console.error('Failed to save API Key via IPC:', result.error);
+            }
+        } catch(e) {
+            console.error('Error invoking save-api-key IPC:', e);
         }
+    }
+
+    async handleClearApiKey() {
+        console.log('Clear API Key clicked');
+        await window.api.settingsView.removeApiKey();
+        this.apiKey = null;
+        this.requestUpdate();
     }
 
     handleQuit() {
         console.log('Quit clicked');
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('quit-application');
-        }
+        window.api.settingsView.quitApplication();
     }
 
     handleFirebaseLogout() {
         console.log('Firebase Logout clicked');
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('firebase-logout');
-        }
+        window.api.settingsView.firebaseLogout();
     }
 
     async handleOllamaShutdown() {
         console.log('[SettingsView] Shutting down Ollama service...');
         
-        if (!window.require) return;
-        
-        const { ipcRenderer } = window.require('electron');
+        if (!window.api) return;
         
         try {
             // Show loading state
             this.ollamaStatus = { ...this.ollamaStatus, running: false };
             this.requestUpdate();
             
-            const result = await ipcRenderer.invoke('settings:shutdown-ollama'); // Graceful shutdown
+            const result = await window.api.settingsView.shutdownOllama(false); // Graceful shutdown
             
             if (result.success) {
                 console.log('[SettingsView] Ollama shut down successfully');

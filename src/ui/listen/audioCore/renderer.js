@@ -1,5 +1,4 @@
 // renderer.js
-const { ipcRenderer } = require('electron');
 const listenCapture = require('./listenCapture.js');
 const params        = new URLSearchParams(window.location.search);
 const isListenView  = params.get('view') === 'listen';
@@ -15,7 +14,7 @@ window.pickleGlass = {
 };
 
 
-ipcRenderer.on('change-listen-capture-state', (_event, { status }) => {
+window.api.renderer.onChangeListenCaptureState((_event, { status }) => {
     if (!isListenView) {
         console.log('[Renderer] Non-listen view: ignoring capture-state change');
         return;

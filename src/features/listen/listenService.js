@@ -1,4 +1,4 @@
-const { ipcMain, BrowserWindow } = require('electron');
+const { BrowserWindow } = require('electron');
 const SttService = require('./stt/sttService');
 const SummaryService = require('./summary/summaryService');
 const authService = require('../common/services/authService');
@@ -263,70 +263,57 @@ class ListenService {
         return this.summaryService.getConversationHistory();
     }
 
-    setupIpcHandlers() {
-        ipcMain.handle('send-audio-content', async (event, { data, mimeType }) => {
+    _createHandler(asyncFn, successMessage, errorMessage) {
+        return async (...args) => {
             try {
-                await this.sendAudioContent(data, mimeType);
-                return { success: true };
+                const result = await asyncFn.apply(this, args);
+                if (successMessage) console.log(successMessage);
+                // `startMacOSAudioCapture`는 성공 시 { success, error } 객체를 반환하지 않으므로,
+                // 핸들러가 일관된 응답을 보내도록 여기서 success 객체를 반환합니다.
+                // 다른 함수들은 이미 success 객체를 반환합니다.
+                return result && typeof result.success !== 'undefined' ? result : { success: true };
             } catch (e) {
-                console.error('Error sending user audio:', e);
+                console.error(errorMessage, e);
                 return { success: false, error: e.message };
             }
-        });
+        };
+    }
 
-        ipcMain.handle('send-system-audio-content', async (event, { data, mimeType }) => {
-            try {
-                await this.sttService.sendSystemAudioContent(data, mimeType);
-                
-                // Send system audio data back to renderer for AEC reference (like macOS does)
-                this.sendToRenderer('system-audio-data', { data });
-                
-                return { success: true };
-            } catch (error) {
-                console.error('Error sending system audio:', error);
-                return { success: false, error: error.message };
-            }
-        });
+    // `_createHandler`를 사용하여 핸들러들을 동적으로 생성합니다.
+    handleSendAudioContent = this._createHandler(
+        this.sendAudioContent,
+        null,
+        'Error sending user audio:'
+    );
 
-        ipcMain.handle('start-macos-audio', async () => {
+    handleStartMacosAudio = this._createHandler(
+        async () => {
             if (process.platform !== 'darwin') {
                 return { success: false, error: 'macOS audio capture only available on macOS' };
             }
             if (this.sttService.isMacOSAudioRunning?.()) {
                 return { success: false, error: 'already_running' };
             }
+            await this.startMacOSAudioCapture();
+            return { success: true, error: null };
+        },
+        'macOS audio capture started.',
+        'Error starting macOS audio capture:'
+    );
+    
+    handleStopMacosAudio = this._createHandler(
+        this.stopMacOSAudioCapture,
+        'macOS audio capture stopped.',
+        'Error stopping macOS audio capture:'
+    );
 
-            try {
-                const success = await this.startMacOSAudioCapture();
-                return { success, error: null };
-            } catch (error) {
-                console.error('Error starting macOS audio capture:', error);
-                return { success: false, error: error.message };
-            }
-        });
-
-        ipcMain.handle('stop-macos-audio', async () => {
-            try {
-                this.stopMacOSAudioCapture();
-                return { success: true };
-            } catch (error) {
-                console.error('Error stopping macOS audio capture:', error);
-                return { success: false, error: error.message };
-            }
-        });
-
-        ipcMain.handle('update-google-search-setting', async (event, enabled) => {
-            try {
-                console.log('Google Search setting updated to:', enabled);
-                return { success: true };
-            } catch (error) {
-                console.error('Error updating Google Search setting:', error);
-                return { success: false, error: error.message };
-            }
-        });
-
-        console.log('✅ Listen service IPC handlers registered');
-    }
+    handleUpdateGoogleSearchSetting = this._createHandler(
+        async (enabled) => {
+            console.log('Google Search setting updated to:', enabled);
+        },
+        null,
+        'Error updating Google Search setting:'
+    );
 }
 
 const listenService = new ListenService();

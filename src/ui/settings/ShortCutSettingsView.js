@@ -102,23 +102,22 @@ export class ShortcutSettingsView extends LitElement {
         this.feedback = {};
         this.isLoading = true;
         this.capturingKey = null;
-        this.ipcRenderer = window.require ? window.require('electron').ipcRenderer : null;
     }
 
     connectedCallback() {
         super.connectedCallback();
-        if (!this.ipcRenderer) return;
+        if (!window.api) return;
         this.loadShortcutsHandler = (event, keybinds) => {
             this.shortcuts = keybinds;
             this.isLoading = false;
         };
-        this.ipcRenderer.on('load-shortcuts', this.loadShortcutsHandler);
+        window.api.shortcutSettingsView.onLoadShortcuts(this.loadShortcutsHandler);
     }
 
     disconnectedCallback() {
         super.disconnectedCallback();
-        if (this.ipcRenderer && this.loadShortcutsHandler) {
-            this.ipcRenderer.removeListener('load-shortcuts', this.loadShortcutsHandler);
+        if (window.api && this.loadShortcutsHandler) {
+            window.api.shortcutSettingsView.removeOnLoadShortcuts(this.loadShortcutsHandler);
         }
     }
 
@@ -171,25 +170,25 @@ export class ShortcutSettingsView extends LitElement {
     }
 
     async handleSave() {
-        if (!this.ipcRenderer) return;
-        const result = await this.ipcRenderer.invoke('save-shortcuts', this.shortcuts);
+        if (!window.api) return;
+        const result = await window.api.shortcutSettingsView.saveShortcuts(this.shortcuts);
         if (!result.success) {
             alert('Failed to save shortcuts: ' + result.error);
         }
     }
 
     handleClose() {
-        if (!this.ipcRenderer) return;
-        this.ipcRenderer.send('close-shortcut-editor');
+        if (!window.api) return;
+        window.api.shortcutSettingsView.closeShortcutEditor();
     }
 
     async handleResetToDefault() {
-        if (!this.ipcRenderer) return;
+        if (!window.api) return;
         const confirmation = confirm("Are you sure you want to reset all shortcuts to their default values?");
         if (!confirmation) return;
     
         try {
-            const defaultShortcuts = await this.ipcRenderer.invoke('get-default-shortcuts');
+            const defaultShortcuts = await window.api.shortcutSettingsView.getDefaultShortcuts();
             this.shortcuts = defaultShortcuts;
         } catch (error) {
             alert('Failed to load default settings.');

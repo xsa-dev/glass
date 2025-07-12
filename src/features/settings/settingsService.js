@@ -423,17 +423,6 @@ function initialize() {
     // cleanup 
     windowNotificationManager.cleanup();
     
-    // IPC handlers for model settings
-    ipcMain.handle('settings:get-model-settings', getModelSettings);
-    ipcMain.handle('settings:validate-and-save-key', (e, { provider, key }) => validateAndSaveKey(provider, key));
-    ipcMain.handle('settings:clear-api-key', (e, { provider }) => clearApiKey(provider));
-    ipcMain.handle('settings:set-selected-model', (e, { type, modelId }) => setSelectedModel(type, modelId));
-
-    // IPC handlers for Ollama management
-    ipcMain.handle('settings:get-ollama-status', getOllamaStatus);
-    ipcMain.handle('settings:ensure-ollama-ready', ensureOllamaReady);
-    ipcMain.handle('settings:shutdown-ollama', shutdownOllama);
-    
     console.log('[SettingsService] Initialized and ready.');
 }
 
