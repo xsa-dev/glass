@@ -24,7 +24,6 @@ class ModelStateService {
     async initialize() {
         console.log('[ModelStateService] Initializing...');
         await this._loadStateForCurrentUser();
-        this.setupIpcHandlers();
         console.log('[ModelStateService] Initialization complete');
     }
 
@@ -329,10 +328,11 @@ class ModelStateService {
         this._logCurrentSelection();
     }
 
-    setApiKey(provider, key) {
+    async setApiKey(provider, key) {
         if (provider in this.state.apiKeys) {
             this.state.apiKeys[provider] = key;
-            this._saveState();
+            this._autoSelectAvailableModels();
+            await this._saveState();
             return true;
         }
         return false;
@@ -523,10 +523,7 @@ class ModelStateService {
         if (result.success) {
             // Use 'local' as placeholder for local services
             const finalKey = (provider === 'ollama' || provider === 'whisper') ? 'local' : key;
-            this.setApiKey(provider, finalKey);
-            // After setting the key, auto-select models
-            this._autoSelectAvailableModels();
-            this._saveState(); // Ensure state is saved after model selection
+            await this.setApiKey(provider, finalKey);
         }
         return result;
     }
@@ -569,26 +566,6 @@ class ModelStateService {
         return { provider, model, apiKey };
     }
     
-    setupIpcHandlers() {
-        ipcMain.handle('model:validate-key', async (e, { provider, key }) => this.handleValidateKey(provider, key));
-        ipcMain.handle('model:get-all-keys', () => this.getAllApiKeys());
-        ipcMain.handle('model:set-api-key', async (e, { provider, key }) => {
-            const success = this.setApiKey(provider, key);
-            if (success) {
-                this._autoSelectAvailableModels();
-                await this._saveState();
-            }
-            return success;
-        });
-        ipcMain.handle('model:remove-api-key', async (e, { provider }) => this.handleRemoveApiKey(provider));
-        ipcMain.handle('model:get-selected-models', () => this.getSelectedModels());
-        ipcMain.handle('model:set-selected-model', async (e, { type, modelId }) => this.handleSetSelectedModel(type, modelId));
-        ipcMain.handle('model:get-available-models', (e, { type }) => this.getAvailableModels(type));
-        ipcMain.handle('model:are-providers-configured', () => this.areProvidersConfigured());
-        ipcMain.handle('model:get-current-model-info', (e, { type }) => this.getCurrentModelInfo(type));
-
-        ipcMain.handle('model:get-provider-config', () => this.getProviderConfig());
-    }
 }
 
 // Export singleton instance

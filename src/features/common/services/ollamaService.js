@@ -7,6 +7,7 @@ const { app } = require('electron');
 const LocalAIServiceBase = require('./localAIServiceBase');
 const { spawnAsync } = require('../utils/spawnHelper');
 const { DOWNLOAD_CHECKSUMS } = require('../config/checksums');
+const ollamaModelRepository = require('../repositories/ollamaModel');
 
 class OllamaService extends LocalAIServiceBase {
     constructor() {
@@ -821,6 +822,183 @@ class OllamaService extends LocalAIServiceBase {
         }
         
         return models;
+    }
+
+    async handleGetStatus() {
+        try {
+            const installed = await this.isInstalled();
+            if (!installed) {
+                return { success: true, installed: false, running: false, models: [] };
+            }
+
+            const running = await this.isServiceRunning();
+            if (!running) {
+                return { success: true, installed: true, running: false, models: [] };
+            }
+
+            const models = await this.getAllModelsWithStatus();
+            return { success: true, installed: true, running: true, models };
+        } catch (error) {
+            console.error('[OllamaService] Error getting status:', error);
+            return { success: false, error: error.message, installed: false, running: false, models: [] };
+        }
+    }
+
+    async handleInstall(event) {
+        try {
+            const onProgress = (data) => {
+                event.sender.send('ollama:install-progress', data);
+            };
+
+            await this.autoInstall(onProgress);
+
+            if (!await this.isServiceRunning()) {
+                onProgress({ stage: 'starting', message: 'Starting Ollama service...', progress: 0 });
+                await this.startService();
+                onProgress({ stage: 'starting', message: 'Ollama service started.', progress: 100 });
+            }
+            event.sender.send('ollama:install-complete', { success: true });
+            return { success: true };
+        } catch (error) {
+            console.error('[OllamaService] Failed to install:', error);
+            event.sender.send('ollama:install-complete', { success: false, error: error.message });
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleStartService(event) {
+        try {
+            if (!await this.isServiceRunning()) {
+                console.log('[OllamaService] Starting Ollama service...');
+                await this.startService();
+            }
+            event.sender.send('ollama:install-complete', { success: true });
+            return { success: true };
+        } catch (error) {
+            console.error('[OllamaService] Failed to start service:', error);
+            event.sender.send('ollama:install-complete', { success: false, error: error.message });
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleEnsureReady() {
+        try {
+            if (await this.isInstalled() && !await this.isServiceRunning()) {
+                console.log('[OllamaService] Ollama installed but not running, starting service...');
+                await this.startService();
+            }
+            return { success: true };
+        } catch (error) {
+            console.error('[OllamaService] Failed to ensure ready:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleGetModels() {
+        try {
+            const models = await this.getAllModelsWithStatus();
+            return { success: true, models };
+        } catch (error) {
+            console.error('[OllamaService] Failed to get models:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleGetModelSuggestions() {
+        try {
+            const suggestions = await this.getModelSuggestions();
+            return { success: true, suggestions };
+        } catch (error) {
+            console.error('[OllamaService] Failed to get model suggestions:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handlePullModel(event, modelName) {
+        try {
+            console.log(`[OllamaService] Starting model pull: ${modelName}`);
+
+            await ollamaModelRepository.updateInstallStatus(modelName, false, true);
+
+            const progressHandler = (data) => {
+                if (data.model === modelName) {
+                    event.sender.send('ollama:pull-progress', data);
+                }
+            };
+
+            const completeHandler = (data) => {
+                if (data.model === modelName) {
+                    console.log(`[OllamaService] Model ${modelName} pull completed`);
+                    this.removeListener('pull-progress', progressHandler);
+                    this.removeListener('pull-complete', completeHandler);
+                }
+            };
+
+            this.on('pull-progress', progressHandler);
+            this.on('pull-complete', completeHandler);
+
+            await this.pullModel(modelName);
+
+            await ollamaModelRepository.updateInstallStatus(modelName, true, false);
+
+            console.log(`[OllamaService] Model ${modelName} pull successful`);
+            return { success: true };
+        } catch (error) {
+            console.error('[OllamaService] Failed to pull model:', error);
+            await ollamaModelRepository.updateInstallStatus(modelName, false, false);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleIsModelInstalled(modelName) {
+        try {
+            const installed = await this.isModelInstalled(modelName);
+            return { success: true, installed };
+        } catch (error) {
+            console.error('[OllamaService] Failed to check model installation:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleWarmUpModel(modelName) {
+        try {
+            const success = await this.warmUpModel(modelName);
+            return { success };
+        } catch (error) {
+            console.error('[OllamaService] Failed to warm up model:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleAutoWarmUp() {
+        try {
+            const success = await this.autoWarmUpSelectedModel();
+            return { success };
+        } catch (error) {
+            console.error('[OllamaService] Failed to auto warm-up:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleGetWarmUpStatus() {
+        try {
+            const status = this.getWarmUpStatus();
+            return { success: true, status };
+        } catch (error) {
+            console.error('[OllamaService] Failed to get warm-up status:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleShutdown(event, force = false) {
+        try {
+            console.log(`[OllamaService] Manual shutdown requested (force: ${force})`);
+            const success = await this.shutdown(force);
+            return { success };
+        } catch (error) {
+            console.error('[OllamaService] Failed to shutdown Ollama:', error);
+            return { success: false, error: error.message };
+        }
     }
 }
 

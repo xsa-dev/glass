@@ -1,5 +1,5 @@
 const { onAuthStateChanged, signInWithCustomToken, signOut } = require('firebase/auth');
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, shell } = require('electron');
 const { getFirebaseAuth } = require('./firebaseClient');
 const fetch = require('node-fetch');
 const encryptionService = require('./encryptionService');
@@ -129,6 +129,19 @@ class AuthService {
         });
 
         return this.initializationPromise;
+    }
+
+    async startFirebaseAuthFlow() {
+        try {
+            const webUrl = process.env.pickleglass_WEB_URL || 'http://localhost:3000';
+            const authUrl = `${webUrl}/login?mode=electron`;
+            console.log(`[AuthService] Opening Firebase auth URL in browser: ${authUrl}`);
+            await shell.openExternal(authUrl);
+            return { success: true };
+        } catch (error) {
+            console.error('[AuthService] Failed to open Firebase auth URL:', error);
+            return { success: false, error: error.message };
+        }
     }
 
     async signInWithCustomToken(token) {

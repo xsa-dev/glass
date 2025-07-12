@@ -588,10 +588,6 @@ function loadAndRegisterShortcuts(movementManager) {
 function setupIpcHandlers(movementManager) {
     setupApiKeyIPC();
 
-    ipcMain.handle('quit-application', () => {
-        app.quit();
-    });
-
     screen.on('display-added', (event, newDisplay) => {
         console.log('[Display] New display added:', newDisplay.id);
     });
@@ -697,14 +693,6 @@ function setupIpcHandlers(movementManager) {
             editor.close();
         }
     });
-
-    ipcMain.handle('open-login-page', () => {
-        const webUrl = process.env.pickleglass_WEB_URL || 'http://localhost:3000';
-        const personalizeUrl = `${webUrl}/personalize?desktop=true`;
-        shell.openExternal(personalizeUrl);
-        console.log('Opening personalization page:', personalizeUrl);
-    });
-
 
     ipcMain.handle('resize-header-window', (event, { width, height }) => {
         const header = windowPool.get('header');
@@ -906,12 +894,6 @@ function setupIpcHandlers(movementManager) {
                 error: error.message,
             };
         }
-    });
-
-    ipcMain.handle('firebase-logout', async () => {
-        console.log('[WindowManager] Received request to log out.');
-        
-        await authService.signOut();
     });
 
     ipcMain.handle('check-system-permissions', async () => {

@@ -169,6 +169,47 @@ class WhisperService extends LocalAIServiceBase {
         console.log(`[WhisperService] Model ${modelId} downloaded successfully`);
     }
 
+    async handleDownloadModel(event, modelId) {
+        try {
+            console.log(`[WhisperService] Handling download for model: ${modelId}`);
+
+            if (!this.isInitialized) {
+                await this.initialize();
+            }
+
+            const progressHandler = (data) => {
+                if (data.modelId === modelId && event && event.sender) {
+                    event.sender.send('whisper:download-progress', data);
+                }
+            };
+            
+            this.on('downloadProgress', progressHandler);
+            
+            try {
+                await this.ensureModelAvailable(modelId);
+            } finally {
+                this.removeListener('downloadProgress', progressHandler);
+            }
+            
+            return { success: true };
+        } catch (error) {
+            console.error(`[WhisperService] Failed to handle download for model ${modelId}:`, error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleGetInstalledModels() {
+        try {
+            if (!this.isInitialized) {
+                await this.initialize();
+            }
+            const models = await this.getInstalledModels();
+            return { success: true, models };
+        } catch (error) {
+            console.error('[WhisperService] Failed to get installed models:', error);
+            return { success: false, error: error.message };
+        }
+    }
 
     async getModelPath(modelId) {
         if (!this.isInitialized || !this.modelsDir) {
