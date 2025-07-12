@@ -1,7 +1,7 @@
 const { BrowserWindow } = require('electron');
 const { spawn } = require('child_process');
 const { createSTT } = require('../../common/ai/factory');
-const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../window/windowManager');
+// const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../window/windowManager');
 
 const COMPLETION_DEBOUNCE_MS = 2000;
 
@@ -120,6 +120,7 @@ class SttService {
     async initializeSttSessions(language = 'en') {
         const effectiveLanguage = process.env.OPENAI_TRANSCRIBE_LANG || language || 'en';
 
+        const { getCurrentModelInfo } = require('../../../window/windowManager');
         const modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
         if (!modelInfo || !modelInfo.apiKey) {
             throw new Error('AI model or API key is not configured.');
@@ -399,6 +400,7 @@ class SttService {
         let modelInfo = this.modelInfo;
         if (!modelInfo) {
             console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
+            const { getCurrentModelInfo } = require('../../../window/windowManager');
             modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
         }
         if (!modelInfo) {
@@ -420,6 +422,7 @@ class SttService {
         let modelInfo = this.modelInfo;
         if (!modelInfo) {
             console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
+            const { getCurrentModelInfo } = require('../../../window/windowManager');
             modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
         }
         if (!modelInfo) {
@@ -501,6 +504,7 @@ class SttService {
         let modelInfo = this.modelInfo;
         if (!modelInfo) {
             console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
+            const { getCurrentModelInfo } = require('../../../window/windowManager');
             modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
         }
         if (!modelInfo) {

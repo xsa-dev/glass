@@ -1,6 +1,8 @@
 // src/bridge/featureBridge.js
 const { ipcMain } = require('electron');
 const settingsService = require('../features/settings/settingsService');
+const askService = require('../features/ask/askService');
+const listenService = require('../features/listen/listenService');
 
 module.exports = {
   // Renderer로부터의 요청을 수신
