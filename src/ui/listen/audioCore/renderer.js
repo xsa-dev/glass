@@ -15,7 +15,7 @@ window.pickleGlass = {
 };
 
 
-ipcRenderer.on('change-listen-capture-state', (_event, { status }) => {
+window.api.audio.onChangeListenCaptureState((_event, { status }) => {
     if (!isListenView) {
         console.log('[Renderer] Non-listen view: ignoring capture-state change');
         return;

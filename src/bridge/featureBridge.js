@@ -1,10 +1,16 @@
 // src/bridge/featureBridge.js
 const { ipcMain } = require('electron');
 const settingsService = require('../features/settings/settingsService');
+const askService = require('../features/ask/askService');
 
 module.exports = {
   // Renderer로부터의 요청을 수신
   initialize() {
+    // Ask 관련 핸들러 추가
+    ipcMain.handle('ask:sendMessage', async (event, userPrompt) => {
+      return askService.sendMessage(userPrompt);
+    });
+
     // 기존 ask 핸들러 유지
     ipcMain.handle('feature:ask', (e, query) => {
       // 실제로는 여기서 Controller -> Service 로직 수행
@@ -61,7 +67,7 @@ module.exports = {
       return await settingsService.setAutoUpdateSetting(isEnabled);
     });
     
-    console.log('[FeatureBridge] Initialized with settings handlers.');
+    console.log('[FeatureBridge] Initialized with ask and settings handlers.');
   },
 
   // Renderer로 상태를 전송

@@ -198,7 +198,7 @@ function runAecSync(micF32, sysF32) {
 
 
 // System audio data handler
-ipcRenderer.on('system-audio-data', (event, { data }) => {
+    window.api.audio.onSystemAudioData((event, { data }) => {
     systemAudioBuffer.push({
         data: data,
         timestamp: Date.now(),
@@ -336,7 +336,7 @@ async function setupMicProcessing(micStream) {
             const pcm16 = convertFloat32ToInt16(processedChunk);
             const b64 = arrayBufferToBase64(pcm16.buffer);
 
-            ipcRenderer.invoke('send-audio-content', {
+            window.api.audio.sendAudioContent({
                 data: b64,
                 mimeType: 'audio/pcm;rate=24000',
             });
@@ -369,7 +369,7 @@ function setupLinuxMicProcessing(micStream) {
             const pcmData16 = convertFloat32ToInt16(chunk);
             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-            await ipcRenderer.invoke('send-audio-content', {
+            await window.api.audio.sendAudioContent({
                 data: base64Data,
                 mimeType: 'audio/pcm;rate=24000',
             });
@@ -403,7 +403,7 @@ function setupSystemAudioProcessing(systemStream) {
             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
             try {
-                await ipcRenderer.invoke('send-system-audio-content', {
+                await window.api.audio.sendSystemAudioContent({
                     data: base64Data,
                     mimeType: 'audio/pcm;rate=24000',
                 });
@@ -433,7 +433,7 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
 
     try {
         // Request screenshot from main process
-        const result = await ipcRenderer.invoke('capture-screenshot', {
+        const result = await window.api.audio.captureScreenshot({
             quality: imageQuality,
         });
 
@@ -470,7 +470,7 @@ async function captureManualScreenshot(imageQuality = null) {
 async function getCurrentScreenshot() {
     try {
         // First try to get a fresh screenshot from main process
-        const result = await ipcRenderer.invoke('get-current-screenshot');
+        const result = await window.api.audio.getCurrentScreenshot();
 
         if (result.success && result.base64) {
             console.log('📸 Got fresh screenshot from main process');
@@ -479,7 +479,7 @@ async function getCurrentScreenshot() {
 
         // If no screenshot available, capture one now
         console.log('📸 No screenshot available, capturing new one');
-        const captureResult = await ipcRenderer.invoke('capture-screenshot', {
+                    const captureResult = await window.api.audio.captureScreenshot({
             quality: currentImageQuality,
         });
 
@@ -518,15 +518,15 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             console.log('Starting macOS capture with SystemAudioDump...');
 
             // Start macOS audio capture
-            const audioResult = await ipcRenderer.invoke('start-macos-audio');
+            const audioResult = await window.api.audio.startMacosAudio();
             if (!audioResult.success) {
                 console.warn('[listenCapture] macOS audio start failed:', audioResult.error);
 
                 // 이미 실행 중 → stop 후 재시도
                 if (audioResult.error === 'already_running') {
-                    await ipcRenderer.invoke('stop-macos-audio');
+                    await window.api.audio.stopMacosAudio();
                     await new Promise(r => setTimeout(r, 500));
-                    const retry = await ipcRenderer.invoke('start-macos-audio');
+                    const retry = await window.api.audio.startMacosAudio();
                     if (!retry.success) {
                         throw new Error('Retry failed: ' + retry.error);
                     }
@@ -536,7 +536,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             }
 
             // Initialize screen capture in main process
-            const screenResult = await ipcRenderer.invoke('start-screen-capture');
+            const screenResult = await window.api.audio.startScreenCapture();
             if (!screenResult.success) {
                 throw new Error('Failed to start screen capture: ' + screenResult.error);
             }
@@ -604,13 +604,13 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             console.log('Starting Windows capture with native loopback audio...');
 
             // Start screen capture in main process for screenshots
-            const screenResult = await ipcRenderer.invoke('start-screen-capture');
+            const screenResult = await window.api.audio.startScreenCapture();
             if (!screenResult.success) {
                 throw new Error('Failed to start screen capture: ' + screenResult.error);
             }
 
             // Ensure STT sessions are initialized before starting audio capture
-            const sessionActive = await ipcRenderer.invoke('is-session-active');
+            const sessionActive = await window.api.audio.isSessionActive();
             if (!sessionActive) {
                 throw new Error('STT sessions not initialized - please wait for initialization to complete');
             }
@@ -715,13 +715,13 @@ function stopCapture() {
     }
 
     // Stop screen capture in main process
-    ipcRenderer.invoke('stop-screen-capture').catch(err => {
+    window.api.audio.stopScreenCapture().catch(err => {
         console.error('Error stopping screen capture:', err);
     });
 
     // Stop macOS audio capture if running
     if (isMacOS) {
-        ipcRenderer.invoke('stop-macos-audio').catch(err => {
+        window.api.audio.stopMacosAudio().catch(err => {
             console.error('Error stopping macOS audio:', err);
         });
     }

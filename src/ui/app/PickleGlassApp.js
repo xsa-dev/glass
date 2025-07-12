@@ -74,13 +74,11 @@ export class PickleGlassApp extends LitElement {
     connectedCallback() {
         super.connectedCallback();
         
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            
-            ipcRenderer.on('click-through-toggled', (_, isEnabled) => {
+        if (window.api && window.api.app) {
+            window.api.app.onClickThroughToggled((_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
-            // ipcRenderer.on('start-listening-session', () => {
+            // window.api.app.onStartListeningSession(() => {
             //     console.log('Received start-listening-session command, calling handleListenClick.');
             //     this.handleListenClick();
             // });
@@ -89,10 +87,9 @@ export class PickleGlassApp extends LitElement {
 
     disconnectedCallback() {
         super.disconnectedCallback();
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeAllListeners('click-through-toggled');
-            // ipcRenderer.removeAllListeners('start-listening-session');
+        if (window.api && window.api.app) {
+            window.api.app.removeAllListeners('click-through-toggled');
+            // window.api.app.removeAllListeners('start-listening-session');
         }
     }
 
@@ -160,9 +157,8 @@ export class PickleGlassApp extends LitElement {
     // }
 
     async handleClose() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('quit-application');
+        if (window.api && window.api.app) {
+            await window.api.app.quitApplication();
         }
     }
 

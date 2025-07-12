@@ -362,8 +362,8 @@ export class MainHeader extends LitElement {
     async handleMouseDown(e) {
         e.preventDefault();
 
-        const { ipcRenderer } = window.require('electron');
-        const initialPosition = await ipcRenderer.invoke('get-header-position');
+        if (!window.api || !window.api.header) return;
+        const initialPosition = await window.api.header.getHeaderPosition();
 
         this.dragState = {
             initialMouseX: e.screenX,
@@ -390,8 +390,9 @@ export class MainHeader extends LitElement {
         const newWindowX = this.dragState.initialWindowX + (e.screenX - this.dragState.initialMouseX);
         const newWindowY = this.dragState.initialWindowY + (e.screenY - this.dragState.initialMouseY);
 
-        const { ipcRenderer } = window.require('electron');
-        ipcRenderer.invoke('move-header-to', newWindowX, newWindowY);
+        if (window.api && window.api.header) {
+            window.api.header.moveHeaderTo(newWindowX, newWindowY);
+        }
     }
 
     handleMouseUp(e) {
@@ -447,12 +448,12 @@ export class MainHeader extends LitElement {
     
         if (this.classList.contains('hiding')) {
             this.classList.add('hidden');
-            if (window.require) {
-                window.require('electron').ipcRenderer.send('header-animation-finished', 'hidden');
+            if (window.api && window.api.header) {
+                window.api.header.sendAnimationFinished('hidden');
             }
         } else if (this.classList.contains('showing')) {
-            if (window.require) {
-                window.require('electron').ipcRenderer.send('header-animation-finished', 'visible');
+            if (window.api && window.api.header) {
+                window.api.header.sendAnimationFinished('visible');
             }
         }
     }
@@ -466,14 +467,12 @@ export class MainHeader extends LitElement {
         super.connectedCallback();
         this.addEventListener('animationend', this.handleAnimationEnd);
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-
+        if (window.api && window.api.header) {
             this._sessionStateTextListener = (event, text) => {
                 this.actionText = text;
                 this.isTogglingSession = false;
             };
-            ipcRenderer.on('session-state-text', this._sessionStateTextListener);
+            window.api.header.onSessionStateText(this._sessionStateTextListener);
 
 
             // this._sessionStateListener = (event, { isActive }) => {
@@ -485,7 +484,7 @@ export class MainHeader extends LitElement {
                 console.log('[MainHeader] Received updated shortcuts:', keybinds);
                 this.shortcuts = keybinds;
             };
-            ipcRenderer.on('shortcuts-updated', this._shortcutListener);
+            window.api.header.onShortcutsUpdated(this._shortcutListener);
         }
     }
 
@@ -498,39 +497,37 @@ export class MainHeader extends LitElement {
             this.animationEndTimer = null;
         }
         
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
+        if (window.api && window.api.header) {
             if (this._sessionStateTextListener) {
-                ipcRenderer.removeListener('session-state-text', this._sessionStateTextListener);
+                window.api.header.removeOnSessionStateText(this._sessionStateTextListener);
             }
             // if (this._sessionStateListener) {
             //     ipcRenderer.removeListener('session-state-changed', this._sessionStateListener);
             // }
             if (this._shortcutListener) {
-                ipcRenderer.removeListener('shortcuts-updated', this._shortcutListener);
+                window.api.header.removeOnShortcutsUpdated(this._shortcutListener);
             }
         }
     }
 
     invoke(channel, ...args) {
         if (this.wasJustDragged) return;
-        if (window.require) {
-            window.require('electron').ipcRenderer.invoke(channel, ...args);
+        if (window.api && window.api.header) {
+            window.api.header.invoke(channel, ...args);
         }
         // return Promise.resolve();
     }
 
     showSettingsWindow(element) {
         if (this.wasJustDragged) return;
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
+        if (window.api && window.api.header) {
             console.log(`[MainHeader] showSettingsWindow called at ${Date.now()}`);
             
-            ipcRenderer.send('cancel-hide-settings-window');
+            window.api.header.cancelHideSettingsWindow();
 
             if (element) {
                 const { left, top, width, height } = element.getBoundingClientRect();
-                ipcRenderer.send('show-settings-window', {
+                window.api.header.showSettingsWindow({
                     x: left,
                     y: top,
                     width,
@@ -542,9 +539,9 @@ export class MainHeader extends LitElement {
 
     hideSettingsWindow() {
         if (this.wasJustDragged) return;
-        if (window.require) {
+        if (window.api && window.api.header) {
             console.log(`[MainHeader] hideSettingsWindow called at ${Date.now()}`);
-            window.require('electron').ipcRenderer.send('hide-settings-window');
+            window.api.header.hideSettingsWindow();
         }
     }
 

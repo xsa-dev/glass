@@ -50,22 +50,20 @@ class HeaderTransitionManager {
 
         this._bootstrap();
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-
-            ipcRenderer.on('user-state-changed', (event, userState) => {
+        if (window.api && window.api.controller) {
+            window.api.controller.onUserStateChanged((event, userState) => {
                 console.log('[HeaderController] Received user state change:', userState);
                 this.handleStateUpdate(userState);
             });
 
-            ipcRenderer.on('auth-failed', (event, { message }) => {
+            window.api.controller.onAuthFailed((event, { message }) => {
                 console.error('[HeaderController] Received auth failure from main process:', message);
                 if (this.apiKeyHeader) {
                     this.apiKeyHeader.errorMessage = 'Authentication failed. Please try again.';
                     this.apiKeyHeader.isLoading = false;
                 }
             });
-            ipcRenderer.on('force-show-apikey-header', async () => {
+            window.api.controller.onForceShowApiKeyHeader(async () => {
                 console.log('[HeaderController] Received broadcast to show apikey header. Switching now.');
                 await this._resizeForApiKey();
                 this.ensureHeader('apikey');
@@ -75,16 +73,16 @@ class HeaderTransitionManager {
 
     notifyHeaderState(stateOverride) {
         const state = stateOverride || this.currentHeaderType || 'apikey';
-        if (window.require) {
-            window.require('electron').ipcRenderer.send('header-state-changed', state);
+        if (window.api && window.api.controller) {
+            window.api.controller.sendHeaderStateChanged(state);
         }
     }
 
     async _bootstrap() {
         // The initial state will be sent by the main process via 'user-state-changed'
         // We just need to request it.
-        if (window.require) {
-            const userState = await window.require('electron').ipcRenderer.invoke('get-current-user');
+        if (window.api && window.api.controller) {
+            const userState = await window.api.controller.getCurrentUser();
             console.log('[HeaderController] Bootstrapping with initial user state:', userState);
             this.handleStateUpdate(userState);
         } else {
@@ -96,8 +94,8 @@ class HeaderTransitionManager {
 
     //////// after_modelStateService ////////
     async handleStateUpdate(userState) {
-        const { ipcRenderer } = window.require('electron');
-        const isConfigured = await ipcRenderer.invoke('model:are-providers-configured');
+        if (!window.api || !window.api.controller) return;
+        const isConfigured = await window.api.controller.areProvidersConfigured();
 
         if (isConfigured) {
             const { isLoggedIn } = userState;
@@ -126,10 +124,9 @@ class HeaderTransitionManager {
         }
 
         // Check if permissions were previously completed
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
+        if (window.api && window.api.controller) {
             try {
-                const permissionsCompleted = await ipcRenderer.invoke('check-permissions-completed');
+                const permissionsCompleted = await window.api.controller.checkPermissionsCompleted();
                 if (permissionsCompleted) {
                     console.log('[HeaderController] Permissions were previously completed, checking current status...');
                     
@@ -162,38 +159,30 @@ class HeaderTransitionManager {
     }
 
     _resizeForMain() {
-        if (!window.require) return;
-        return window
-            .require('electron')
-            .ipcRenderer.invoke('resize-header-window', { width: 353, height: 47 })
+        if (!window.api || !window.api.controller) return;
+        return window.api.controller.resizeHeaderWindow({ width: 353, height: 47 })
             .catch(() => {});
     }
 
     async _resizeForApiKey() {
-        if (!window.require) return;
-        return window
-            .require('electron')
-            .ipcRenderer.invoke('resize-header-window', { width: 350, height: 300 })
+        if (!window.api || !window.api.controller) return;
+        return window.api.controller.resizeHeaderWindow({ width: 350, height: 300 })
             .catch(() => {});
     }
 
     async _resizeForPermissionHeader() {
-        if (!window.require) return;
-        return window
-            .require('electron')
-            .ipcRenderer.invoke('resize-header-window', { width: 285, height: 220 })
+        if (!window.api || !window.api.controller) return;
+        return window.api.controller.resizeHeaderWindow({ width: 285, height: 220 })
             .catch(() => {});
     }
 
     async checkPermissions() {
-        if (!window.require) {
+        if (!window.api || !window.api.controller) {
             return { success: true };
         }
-
-        const { ipcRenderer } = window.require('electron');
         
         try {
-            const permissions = await ipcRenderer.invoke('check-system-permissions');
+            const permissions = await window.api.controller.checkSystemPermissions();
             console.log('[HeaderController] Current permissions:', permissions);
             
             if (!permissions.needsSetup) {

@@ -288,13 +288,12 @@ export class PermissionHeader extends LitElement {
     }
 
     async checkPermissions() {
-        if (!window.require || this.isChecking) return;
-        
+                if (!window.api || !window.api.permissions || this.isChecking) return;
+
         this.isChecking = true;
-        const { ipcRenderer } = window.require('electron');
         
         try {
-            const permissions = await ipcRenderer.invoke('check-system-permissions');
+            const permissions = await window.api.permissions.checkSystemPermissions();
             console.log('[PermissionHeader] Permission check result:', permissions);
             
             const prevMic = this.microphoneGranted;
@@ -324,13 +323,12 @@ export class PermissionHeader extends LitElement {
     }
 
     async handleMicrophoneClick() {
-        if (!window.require || this.microphoneGranted === 'granted') return;
+        if (!window.api || !window.api.permissions || this.microphoneGranted === 'granted') return;
         
         console.log('[PermissionHeader] Requesting microphone permission...');
-        const { ipcRenderer } = window.require('electron');
         
         try {
-            const result = await ipcRenderer.invoke('check-system-permissions');
+            const result = await window.api.permissions.checkSystemPermissions();
             console.log('[PermissionHeader] Microphone permission result:', result);
             
             if (result.microphone === 'granted') {
@@ -340,7 +338,7 @@ export class PermissionHeader extends LitElement {
               }
             
               if (result.microphone === 'not-determined' || result.microphone === 'denied' || result.microphone === 'unknown' || result.microphone === 'restricted') {
-                const res = await ipcRenderer.invoke('request-microphone-permission');
+                const res = await window.api.permissions.requestMicrophonePermission();
                 if (res.status === 'granted' || res.success === true) {
                     this.microphoneGranted = 'granted';
                     this.requestUpdate();
@@ -357,13 +355,12 @@ export class PermissionHeader extends LitElement {
     }
 
     async handleScreenClick() {
-        if (!window.require || this.screenGranted === 'granted') return;
+        if (!window.api || !window.api.permissions || this.screenGranted === 'granted') return;
         
         console.log('[PermissionHeader] Checking screen recording permission...');
-        const { ipcRenderer } = window.require('electron');
         
         try {
-            const permissions = await ipcRenderer.invoke('check-system-permissions');
+            const permissions = await window.api.permissions.checkSystemPermissions();
             console.log('[PermissionHeader] Screen permission check result:', permissions);
             
             if (permissions.screen === 'granted') {
@@ -373,7 +370,7 @@ export class PermissionHeader extends LitElement {
             }
             if (permissions.screen === 'not-determined' || permissions.screen === 'denied' || permissions.screen === 'unknown' || permissions.screen === 'restricted') {
             console.log('[PermissionHeader] Opening screen recording preferences...');
-            await ipcRenderer.invoke('open-system-preferences', 'screen-recording');
+            await window.api.permissions.openSystemPreferences('screen-recording');
             }
             
             // Check permissions again after a delay
@@ -389,10 +386,9 @@ export class PermissionHeader extends LitElement {
             this.microphoneGranted === 'granted' && 
             this.screenGranted === 'granted') {
             // Mark permissions as completed
-            if (window.require) {
-                const { ipcRenderer } = window.require('electron');
+            if (window.api && window.api.permissions) {
                 try {
-                    await ipcRenderer.invoke('mark-permissions-completed');
+                    await window.api.permissions.markPermissionsCompleted();
                     console.log('[PermissionHeader] Marked permissions as completed');
                 } catch (error) {
                     console.error('[PermissionHeader] Error marking permissions as completed:', error);
@@ -405,8 +401,8 @@ export class PermissionHeader extends LitElement {
 
     handleClose() {
         console.log('Close button clicked');
-        if (window.require) {
-            window.require('electron').ipcRenderer.invoke('quit-application');
+        if (window.api && window.api.permissions) {
+            window.api.permissions.quitApplication();
         }
     }
 

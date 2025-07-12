@@ -1113,9 +1113,8 @@ export class AskView extends LitElement {
 
 
     requestWindowResize(targetHeight) {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('adjust-window-height', targetHeight);
+        if (window.api && window.api.ask) {
+            window.api.ask.adjustWindowHeight(targetHeight);
         }
     }
 
@@ -1279,9 +1278,8 @@ export class AskView extends LitElement {
         this.requestUpdate();
         this.renderContent();
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('ask:sendMessage', text).catch(error => {
+        if (window.api && window.api.ask) {
+            window.api.ask.sendMessage(text).catch(error => {
                 console.error('Error sending text:', error);
                 this.isLoading = false;
                 this.isStreaming = false;
@@ -1410,7 +1408,7 @@ export class AskView extends LitElement {
 
     // Dynamically resize the BrowserWindow to fit current content
     adjustWindowHeight() {
-        if (!window.require) return;
+        if (!window.api || !window.api.ask) return;
 
         this.updateComplete.then(() => {
             const headerEl = this.shadowRoot.querySelector('.response-header');
@@ -1427,8 +1425,7 @@ export class AskView extends LitElement {
 
             const targetHeight = Math.min(700, idealHeight);
 
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('adjust-window-height', targetHeight);
+            window.api.ask.adjustWindowHeight(targetHeight);
 
         }).catch(err => console.error('AskView adjustWindowHeight error:', err));
     }

@@ -238,15 +238,13 @@
             window.addEventListener('DOMContentLoaded', () => {
                 const app = document.getElementById('pickle-glass');
         
-                if (window.require) {
-                    const { ipcRenderer } = window.require('electron');
-        
+                if (window.api && window.api.animation) {
                     // --- REFACTORED: Event-driven animation handling ---
                     app.addEventListener('animationend', (event) => {
                         // 숨김 애니메이션이 끝나면 main 프로세스에 알려 창을 실제로 숨깁니다.
                         if (event.animationName === 'slideUpToHeader' || event.animationName === 'settingsCollapseToButton') {
                             console.log(`Animation finished: ${event.animationName}. Notifying main process.`);
-                            ipcRenderer.send('animation-finished');
+                            window.api.animation.sendAnimationFinished();
         
                             // 완료 후 애니메이션 클래스 정리
                             app.classList.remove('window-sliding-up', 'settings-window-hide');
@@ -257,26 +255,26 @@
                         }
                     });
         
-                    ipcRenderer.on('window-show-animation', () => {
+                    window.api.animation.onWindowShowAnimation(() => {
                         console.log('Starting window show animation');
                         app.classList.remove('window-hidden', 'window-sliding-up', 'settings-window-hide');
                         app.classList.add('window-sliding-down');
                     });
         
-                    ipcRenderer.on('window-hide-animation', () => {
+                    window.api.animation.onWindowHideAnimation(() => {
                         console.log('Starting window hide animation');
                         app.classList.remove('window-sliding-down', 'settings-window-show');
                         app.classList.add('window-sliding-up');
                     });
         
-                    ipcRenderer.on('settings-window-hide-animation', () => {
+                    window.api.animation.onSettingsWindowHideAnimation(() => {
                         console.log('Starting settings window hide animation');
                         app.classList.remove('window-sliding-down', 'settings-window-show');
                         app.classList.add('settings-window-hide');
                     });
         
                     // --- UNCHANGED: Existing logic for listen window movement ---
-                    ipcRenderer.on('listen-window-move-to-center', () => {
+                    window.api.animation.onListenWindowMoveToCenter(() => {
                         console.log('Moving listen window to center');
                         app.classList.add('listen-window-moving');
                         app.classList.remove('listen-window-left');
@@ -287,7 +285,7 @@
                         }, 350);
                     });
         
-                    ipcRenderer.on('listen-window-move-to-left', () => {
+                    window.api.animation.onListenWindowMoveToLeft(() => {
                         console.log('Moving listen window to left');
                         app.classList.add('listen-window-moving');
                         app.classList.remove('listen-window-center');

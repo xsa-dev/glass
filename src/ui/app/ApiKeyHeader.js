@@ -370,13 +370,12 @@ export class ApiKeyHeader extends LitElement {
   }
 
   async loadProviderConfig() {
-    if (!window.require) return;
-    const { ipcRenderer } = window.require('electron');
+            if (!window.api || !window.api.apikey) return;
     
     try {
         const [config, ollamaStatus] = await Promise.all([
-            ipcRenderer.invoke('model:get-provider-config'),
-            ipcRenderer.invoke('ollama:get-status')
+            window.api.apikey.getProviderConfig(),
+            window.api.apikey.getOllamaStatus()
         ]);
         
         const llmProviders = [];
@@ -428,8 +427,8 @@ export class ApiKeyHeader extends LitElement {
 
     e.preventDefault()
 
-    const { ipcRenderer } = window.require("electron")
-    const initialPosition = await ipcRenderer.invoke("get-header-position")
+    if (!window.api || !window.api.apikey) return;
+    const initialPosition = await window.api.apikey.getHeaderPosition()
 
     this.dragState = {
       initialMouseX: e.screenX,
@@ -456,8 +455,9 @@ export class ApiKeyHeader extends LitElement {
     const newWindowX = this.dragState.initialWindowX + (e.screenX - this.dragState.initialMouseX)
     const newWindowY = this.dragState.initialWindowY + (e.screenY - this.dragState.initialMouseY)
 
-    const { ipcRenderer } = window.require("electron")
-    ipcRenderer.invoke("move-header-to", newWindowX, newWindowY)
+    if (window.api && window.api.apikey) {
+      window.api.apikey.moveHeaderTo(newWindowX, newWindowY)
+    }
   }
 
   handleMouseUp(e) {
@@ -652,9 +652,8 @@ export class ApiKeyHeader extends LitElement {
     try {
       // Lightweight health check - just ping the service
       const isHealthy = await this._executeOperation('health_check', async () => {
-        if (!window.require) return false;
-        const { ipcRenderer } = window.require('electron');
-        const result = await ipcRenderer.invoke('ollama:get-status');
+        if (!window.api || !window.api.apikey) return false;
+                    const result = await window.api.apikey.getOllamaStatus();
         return result?.success && result?.running;
       }, { timeout: 5000, priority: 'low' });
       
@@ -928,14 +927,13 @@ export class ApiKeyHeader extends LitElement {
   }
   
   async refreshOllamaStatus() {
-    if (!window.require) return;
+    if (!window.api || !window.api.apikey) return;
     
     try {
       this._updateConnectionState('connecting', 'Checking Ollama status');
       
       const result = await this._executeOperation('ollama_status', async () => {
-        const { ipcRenderer } = window.require('electron');
-        return await ipcRenderer.invoke('ollama:get-status');
+        return await window.api.apikey.getOllamaStatus();
       });
       
       if (result?.success) {
@@ -960,12 +958,11 @@ export class ApiKeyHeader extends LitElement {
   }
   
   async loadModelSuggestions() {
-    if (!window.require) return;
+    if (!window.api || !window.api.apikey) return;
     
     try {
       const result = await this._executeOperation('model_suggestions', async () => {
-        const { ipcRenderer } = window.require('electron');
-        return await ipcRenderer.invoke('ollama:get-model-suggestions');
+        return await window.api.apikey.getModelSuggestions();
       });
       
       if (result?.success) {
@@ -988,14 +985,13 @@ export class ApiKeyHeader extends LitElement {
   }
 
   async ensureOllamaReady() {
-    if (!window.require) return false;
+    if (!window.api || !window.api.apikey) return false;
     
     try {
       this._updateConnectionState('connecting', 'Ensuring Ollama is ready');
       
       const result = await this._executeOperation('ollama_ensure_ready', async () => {
-        const { ipcRenderer } = window.require('electron');
-        return await ipcRenderer.invoke('ollama:ensure-ready');
+        return await window.api.apikey.ensureReady();
       }, { timeout: this.operationTimeout });
       
       if (result?.success) {
@@ -1015,8 +1011,7 @@ export class ApiKeyHeader extends LitElement {
   }
 
   async ensureOllamaReadyWithUI() {
-    if (!window.require) return false;
-    const { ipcRenderer } = window.require("electron");
+    if (!window.api || !window.api.apikey) return false;
 
     this.installingModel = "Setting up Ollama";
     this.installProgress = 0;
@@ -1074,21 +1069,21 @@ export class ApiKeyHeader extends LitElement {
       operationCompleted = true;
       clearTimeout(completionTimeout);
       
-      ipcRenderer.removeListener("ollama:install-progress", progressHandler);
+      window.api.apikey.removeOnOllamaInstallProgress(progressHandler);
       await this._handleOllamaSetupCompletion(result.success, result.error);
     };
 
-    ipcRenderer.once("ollama:install-complete", completionHandler);
-    ipcRenderer.on("ollama:install-progress", progressHandler);
+    window.api.apikey.onOllamaInstallComplete(completionHandler);
+    window.api.apikey.onOllamaInstallProgress(progressHandler);
 
     try {
       let result;
       if (!this.ollamaStatus.installed) {
         console.log("[ApiKeyHeader] Ollama not installed. Starting installation.");
-        result = await ipcRenderer.invoke("ollama:install");
+        result = await window.api.apikey.installOllama();
       } else {
         console.log("[ApiKeyHeader] Ollama installed. Starting service.");
-        result = await ipcRenderer.invoke("ollama:start-service");
+        result = await window.api.apikey.startService();
       }
       
       // If IPC call succeeds but no event received, handle completion manually
@@ -1106,8 +1101,8 @@ export class ApiKeyHeader extends LitElement {
       operationCompleted = true;
       clearTimeout(completionTimeout);
       console.error("[ApiKeyHeader] Ollama setup failed:", error);
-      ipcRenderer.removeListener("ollama:install-progress", progressHandler);
-      ipcRenderer.removeListener("ollama:install-complete", completionHandler);
+      window.api.apikey.removeOnOllamaInstallProgress(progressHandler);
+      window.api.apikey.removeOnOllamaInstallComplete(completionHandler);
       await this._handleOllamaSetupCompletion(false, error.message);
     }
   }
@@ -1229,7 +1224,7 @@ export class ApiKeyHeader extends LitElement {
     this.clearMessages();
     this.requestUpdate();
     
-    const { ipcRenderer } = window.require('electron');
+    if (!window.api || !window.api.apikey) return;
     let progressHandler = null;
     
     try {
@@ -1249,10 +1244,10 @@ export class ApiKeyHeader extends LitElement {
       };
       
       // Set up progress tracking
-      ipcRenderer.on('ollama:pull-progress', progressHandler);
+      window.api.apikey.onOllamaPullProgress(progressHandler);
       
       // Execute the model pull with timeout
-      const installPromise = ipcRenderer.invoke('ollama:pull-model', modelName);
+      const installPromise = window.api.apikey.pullModel(modelName);
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Installation timeout after 10 minutes')), 600000)
       );
@@ -1281,7 +1276,7 @@ export class ApiKeyHeader extends LitElement {
     } finally {
       // Comprehensive cleanup
       if (progressHandler) {
-        ipcRenderer.removeListener('ollama:pull-progress', progressHandler);
+        window.api.apikey.removeOnOllamaPullProgress(progressHandler);
       }
       
       this.installingModel = null;
@@ -1307,7 +1302,7 @@ export class ApiKeyHeader extends LitElement {
     this.clearMessages();
     this.requestUpdate();
     
-    const { ipcRenderer } = window.require('electron');
+    if (!window.api || !window.api.apikey) return;
     let progressHandler = null;
     
     try {
@@ -1321,10 +1316,10 @@ export class ApiKeyHeader extends LitElement {
         }
       };
       
-      ipcRenderer.on('whisper:download-progress', progressHandler);
+      window.api.apikey.onWhisperDownloadProgress(progressHandler);
       
       // Start download with timeout protection
-      const downloadPromise = ipcRenderer.invoke('whisper:download-model', modelId);
+      const downloadPromise = window.api.apikey.downloadModel(modelId);
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Download timeout after 10 minutes')), 600000)
       );
@@ -1351,7 +1346,7 @@ export class ApiKeyHeader extends LitElement {
     } finally {
       // Cleanup
       if (progressHandler) {
-        ipcRenderer.removeListener('whisper:download-progress', progressHandler);
+        window.api.apikey.removeOnWhisperDownloadProgress(progressHandler);
       }
       delete this.whisperInstallingModels[modelId];
       this.requestUpdate();
@@ -1412,7 +1407,7 @@ export class ApiKeyHeader extends LitElement {
     this.clearMessages();
     this.requestUpdate();
 
-    const { ipcRenderer } = window.require('electron');
+    if (!window.api || !window.api.apikey) return;
     
     try {
         // Handle LLM provider
@@ -1436,14 +1431,14 @@ export class ApiKeyHeader extends LitElement {
             }
             
             // Validate Ollama is working
-            llmResult = await ipcRenderer.invoke('model:validate-key', { 
+            llmResult = await window.api.apikey.validateKey({ 
                 provider: 'ollama', 
                 key: 'local' 
             });
             
             if (llmResult.success) {
                 // Set the selected model
-                await ipcRenderer.invoke('model:set-selected-model', { 
+                await window.api.apikey.setSelectedModel({ 
                     type: 'llm', 
                     modelId: this.selectedLlmModel 
                 });
@@ -1454,7 +1449,7 @@ export class ApiKeyHeader extends LitElement {
                 throw new Error('Please enter LLM API key');
             }
             
-            llmResult = await ipcRenderer.invoke('model:validate-key', { 
+            llmResult = await window.api.apikey.validateKey({ 
                 provider: this.llmProvider, 
                 key: this.llmApiKey.trim() 
             });
@@ -1467,14 +1462,14 @@ export class ApiKeyHeader extends LitElement {
             sttResult = { success: true };
         } else if (this.sttProvider === 'whisper') {
             // For Whisper, just validate it's enabled (model download already handled in handleSttModelChange)
-            sttResult = await ipcRenderer.invoke('model:validate-key', { 
+            sttResult = await window.api.apikey.validateKey({ 
                 provider: 'whisper', 
                 key: 'local' 
             });
             
             if (sttResult.success && this.selectedSttModel) {
                 // Set the selected model
-                await ipcRenderer.invoke('model:set-selected-model', { 
+                await window.api.apikey.setSelectedModel({ 
                     type: 'stt', 
                     modelId: this.selectedSttModel 
                 });
@@ -1485,7 +1480,7 @@ export class ApiKeyHeader extends LitElement {
                 throw new Error('Please enter STT API key');
             }
             
-            sttResult = await ipcRenderer.invoke('model:validate-key', { 
+            sttResult = await window.api.apikey.validateKey({ 
                 provider: this.sttProvider, 
                 key: this.sttApiKey.trim() 
             });
@@ -1522,15 +1517,15 @@ export class ApiKeyHeader extends LitElement {
     e.preventDefault()
 
     console.log("Requesting Firebase authentication from main process...")
-    if (window.require) {
-      window.require("electron").ipcRenderer.invoke("start-firebase-auth")
+    if (window.api && window.api.apikey) {
+      window.api.apikey.startFirebaseAuth()
     }
   }
 
   handleClose() {
     console.log("Close button clicked")
-    if (window.require) {
-      window.require("electron").ipcRenderer.invoke("quit-application")
+    if (window.api && window.api.apikey) {
+      window.api.apikey.quitApplication()
     }
   }
 
@@ -1543,8 +1538,8 @@ export class ApiKeyHeader extends LitElement {
     
     console.log('[ApiKeyHeader] handleAnimationEnd: Animation completed, transitioning to next state...');
     
-    if (!window.require) {
-      console.error('[ApiKeyHeader] handleAnimationEnd: window.require not available');
+    if (!window.api || !window.api.apikey) {
+      console.error('[ApiKeyHeader] handleAnimationEnd: window.api.apikey not available');
       return;
     }
     
@@ -1553,14 +1548,12 @@ export class ApiKeyHeader extends LitElement {
       return;
     }
     
-    const { ipcRenderer } = window.require('electron');
-    
-    ipcRenderer.invoke('get-current-user')
+    window.api.apikey.getCurrentUser()
       .then(userState => {
         console.log('[ApiKeyHeader] handleAnimationEnd: User state retrieved:', userState);
         
         // Additional validation for local providers
-        return ipcRenderer.invoke('model:are-providers-configured').then(isConfigured => {
+        return window.api.apikey.areProvidersConfigured().then(isConfigured => {
           console.log('[ApiKeyHeader] handleAnimationEnd: Providers configured check:', isConfigured);
           
           if (!isConfigured) {
@@ -1624,12 +1617,11 @@ export class ApiKeyHeader extends LitElement {
     }
     
     // Cleanup event listeners
-    if (window.require) {
-      const { ipcRenderer } = window.require('electron');
-      ipcRenderer.removeAllListeners('whisper:download-progress');
-      ipcRenderer.removeAllListeners('ollama:install-progress');
-      ipcRenderer.removeAllListeners('ollama:pull-progress');
-      ipcRenderer.removeAllListeners('ollama:install-complete');
+    if (window.api && window.api.apikey) {
+      window.api.apikey.removeAllListeners('whisper:download-progress');
+      window.api.apikey.removeAllListeners('ollama:install-progress');
+      window.api.apikey.removeAllListeners('ollama:pull-progress');
+      window.api.apikey.removeAllListeners('ollama:install-complete');
     }
     
     // Cancel any ongoing downloads

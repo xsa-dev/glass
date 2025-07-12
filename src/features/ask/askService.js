@@ -26,7 +26,7 @@ async function sendMessage(userPrompt) {
     let sessionId; 
 
     try {
-        console.log(`[AskService] 🤖 Processing message: ${userPrompt.substring(0, 50)}...`);
+        console.log(`[AskService] Processing message: ${userPrompt.substring(0, 50)}...`);
 
         // --- Save user's message immediately ---
         // This ensures the user message is always timestamped before the assistant's response.
@@ -134,12 +134,11 @@ async function sendMessage(userPrompt) {
 }
 
 function initialize() {
-    ipcMain.handle('ask:sendMessage', async (event, userPrompt) => {
-        return sendMessage(userPrompt);
-    });
+    // IPC 핸들러는 featureBridge.js로 이동됨
     console.log('[AskService] Initialized and ready.');
 }
 
 module.exports = {
     initialize,
+    sendMessage,  // sendMessage 함수 export 추가
 };

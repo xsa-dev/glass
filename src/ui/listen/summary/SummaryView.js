@@ -262,9 +262,8 @@ export class SummaryView extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.on('summary-update', (event, data) => {
+        if (window.api && window.api.listen) {
+            window.api.listen.onSummaryUpdate((event, data) => {
                 this.structuredData = data;
                 this.requestUpdate();
             });
@@ -273,9 +272,8 @@ export class SummaryView extends LitElement {
 
     disconnectedCallback() {
         super.disconnectedCallback();
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeAllListeners('summary-update');
+        if (window.api && window.api.listen) {
+            window.api.listen.removeOnSummaryUpdate(() => {});
         }
     }
 
@@ -408,9 +406,7 @@ export class SummaryView extends LitElement {
     async handleRequestClick(requestText) {
         console.log('🔥 Analysis request clicked:', requestText);
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-
+        if (window.api && window.api.listen) {
             try {
                 const result = await ipcRenderer.invoke('ask:sendQuestionToMain', requestText);
 

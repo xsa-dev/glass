@@ -453,9 +453,8 @@ export class ListenView extends LitElement {
         if (this.isSessionActive) {
             this.startTimer();
         }
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.on('session-state-changed', (event, { isActive }) => {
+        if (window.api && window.api.listen) {
+            window.api.listen.onSessionStateChanged((event, { isActive }) => {
                 const wasActive = this.isSessionActive;
                 this.isSessionActive = isActive;
 
@@ -514,7 +513,7 @@ export class ListenView extends LitElement {
     }
 
     adjustWindowHeight() {
-        if (!window.require) return;
+        if (!window.api || !window.api.listen) return;
 
         this.updateComplete
             .then(() => {
@@ -537,8 +536,7 @@ export class ListenView extends LitElement {
                     `[Height Adjusted] Mode: ${this.viewMode}, TopBar: ${topBarHeight}px, Content: ${contentHeight}px, Ideal: ${idealHeight}px, Target: ${targetHeight}px`
                 );
 
-                const { ipcRenderer } = window.require('electron');
-                ipcRenderer.invoke('adjust-window-height', targetHeight);
+                window.api.listen.adjustWindowHeight(targetHeight);
             })
             .catch(error => {
                 console.error('Error in adjustWindowHeight:', error);
