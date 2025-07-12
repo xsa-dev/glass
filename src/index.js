@@ -13,7 +13,7 @@ if (require('electron-squirrel-startup')) {
 
 const { app, BrowserWindow, shell, ipcMain, dialog, desktopCapturer, session } = require('electron');
 const { createWindows } = require('./window/windowManager.js');
-const ListenService = require('./features/listen/listenService');
+const listenService = require('./features/listen/listenService');
 const { initializeFirebase } = require('./features/common/services/firebaseClient');
 const databaseInitializer = require('./features/common/services/databaseInitializer');
 const authService = require('./features/common/services/authService');
@@ -33,10 +33,6 @@ const featureBridge = require('./bridge/featureBridge');
 const eventBridge = new EventEmitter();
 let WEB_PORT = 3000;
 let isShuttingDown = false; // Flag to prevent infinite shutdown loop
-
-const listenService = new ListenService();
-// Make listenService globally accessible so other modules (e.g., windowManager, askService) can reuse the same instance
-global.listenService = listenService;
 
 //////// after_modelStateService ////////
 const modelStateService = new ModelStateService(authService);
@@ -203,7 +199,7 @@ app.whenReady().then(async () => {
         await modelStateService.initialize();
         //////// after_modelStateService ////////
 
-        listenService.setupIpcHandlers();
+        listenService.initialize();
         askService.initialize();
         settingsService.initialize();
         featureBridge.initialize();  // 추가: featureBridge 초기화
@@ -250,13 +246,6 @@ app.whenReady().then(async () => {
     }
 });
 
-app.on('window-all-closed', () => {
-    listenService.stopMacOSAudioCapture();
-    if (process.platform !== 'darwin') {
-        app.quit();
-    }
-});
-
 app.on('before-quit', async (event) => {
     // Prevent infinite loop by checking if shutdown is already in progress
     if (isShuttingDown) {
@@ -274,7 +263,7 @@ app.on('before-quit', async (event) => {
     
     try {
         // 1. Stop audio capture first (immediate)
-        listenService.stopMacOSAudioCapture();
+        await listenService.closeSession();
         console.log('[Shutdown] Audio capture stopped');
         
         // 2. End all active sessions (database operations) - with error handling
