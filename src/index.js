@@ -12,7 +12,7 @@ if (require('electron-squirrel-startup')) {
 }
 
 const { app, BrowserWindow, shell, ipcMain, dialog, desktopCapturer, session } = require('electron');
-const { createWindows } = require('./electron/windowManager.js');
+const { createWindows } = require('./window/windowManager.js');
 const ListenService = require('./features/listen/listenService');
 const { initializeFirebase } = require('./common/services/firebaseClient');
 const databaseInitializer = require('./common/services/databaseInitializer');
@@ -124,7 +124,7 @@ function setupProtocolHandling() {
 }
 
 function focusMainWindow() {
-    const { windowPool } = require('./electron/windowManager');
+    const { windowPool } = require('./window/windowManager.js');
     if (windowPool) {
         const header = windowPool.get('header');
         if (header && !header.isDestroyed()) {
@@ -790,7 +790,7 @@ async function handleCustomUrl(url) {
                 handlePersonalizeFromUrl(params);
                 break;
             default:
-                const { windowPool } = require('./electron/windowManager');
+                const { windowPool } = require('./window/windowManager.js');
                 const header = windowPool.get('header');
                 if (header) {
                     if (header.isMinimized()) header.restore();
@@ -852,7 +852,7 @@ async function handleFirebaseAuthCallback(params) {
         console.log('[Auth] Main process sign-in initiated. Waiting for onAuthStateChanged...');
 
         // 3. Focus the app window
-        const { windowPool } = require('./electron/windowManager');
+        const { windowPool } = require('./window/windowManager.js');
         const header = windowPool.get('header');
         if (header) {
             if (header.isMinimized()) header.restore();
@@ -865,7 +865,7 @@ async function handleFirebaseAuthCallback(params) {
         console.error('[Auth] Error during custom token exchange or sign-in:', error);
         // The UI will not change, and the user can try again.
         // Optionally, send a generic error event to the renderer.
-        const { windowPool } = require('./electron/windowManager');
+        const { windowPool } = require('./window/windowManager.js');
         const header = windowPool.get('header');
         if (header) {
             header.webContents.send('auth-failed', { message: error.message });
@@ -876,7 +876,7 @@ async function handleFirebaseAuthCallback(params) {
 function handlePersonalizeFromUrl(params) {
     console.log('[Custom URL] Personalize params:', params);
     
-    const { windowPool } = require('./electron/windowManager');
+    const { windowPool } = require('./window/windowManager.js');
     const header = windowPool.get('header');
     
     if (header) {

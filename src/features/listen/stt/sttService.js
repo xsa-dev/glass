@@ -1,7 +1,7 @@
 const { BrowserWindow } = require('electron');
 const { spawn } = require('child_process');
 const { createSTT } = require('../../../common/ai/factory');
-const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../electron/windowManager');
+const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../window/windowManager');
 
 const COMPLETION_DEBOUNCE_MS = 2000;
 

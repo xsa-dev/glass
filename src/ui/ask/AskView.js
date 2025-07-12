@@ -1,4 +1,4 @@
-import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
+import { html, css, LitElement } from '../../ui/assets/lit-core-2.7.4.min.js';
 
 export class AskView extends LitElement {
     static properties = {
@@ -897,7 +897,7 @@ export class AskView extends LitElement {
         if (container) this.resizeObserver.observe(container);
 
         this.handleQuestionFromAssistant = (event, question) => {
-            console.log('📨 AskView: Received question from AssistantView:', question);
+            console.log('📨 AskView: Received question from ListenView:', question);
             this.currentResponse = '';
             this.isStreaming = false;
             this.requestUpdate();

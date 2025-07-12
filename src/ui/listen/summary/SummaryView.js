@@ -1,4 +1,4 @@
-import { html, css, LitElement } from '../../../assets/lit-core-2.7.4.min.js';
+import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
 
 export class SummaryView extends LitElement {
     static styles = css`

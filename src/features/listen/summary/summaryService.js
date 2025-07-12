@@ -4,7 +4,7 @@ const { createLLM } = require('../../../common/ai/factory');
 const authService = require('../../../common/services/authService');
 const sessionRepository = require('../../../common/repositories/session');
 const summaryRepository = require('./repositories');
-const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../electron/windowManager');
+const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../window/windowManager.js');
 
 class SummaryService {
     constructor() {

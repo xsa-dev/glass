@@ -1,10 +1,10 @@
 import { html, css, LitElement } from '../assets/lit-core-2.7.4.min.js';
-import { SettingsView } from '../features/settings/SettingsView.js';
-import { AssistantView } from '../features/listen/AssistantView.js';
-import { AskView } from '../features/ask/AskView.js';
-import { ShortcutSettingsView } from '../features/settings/ShortCutSettingsView.js';
+import { SettingsView } from '../settings/SettingsView.js';
+import { ListenView } from '../listen/ListenView.js';
+import { AskView } from '../../features/ask/AskView.js';
+import { ShortcutSettingsView } from '../../features/settings/ShortCutSettingsView.js';
 
-import '../features/listen/renderer/renderer.js';
+import '../listen/audioCore/renderer.js';
 
 export class PickleGlassApp extends LitElement {
     static styles = css`
@@ -17,7 +17,7 @@ export class PickleGlassApp extends LitElement {
             border-radius: 7px;
         }
 
-        assistant-view {
+        listen-view {
             display: block;
             width: 100%;
             height: 100%;
@@ -172,12 +172,12 @@ export class PickleGlassApp extends LitElement {
     render() {
         switch (this.currentView) {
             case 'listen':
-                return html`<assistant-view
+                return html`<listen-view
                     .currentResponseIndex=${this.currentResponseIndex}
                     .selectedProfile=${this.selectedProfile}
                     .structuredData=${this.structuredData}
                     @response-index-changed=${e => (this.currentResponseIndex = e.detail.index)}
-                ></assistant-view>`;
+                ></listen-view>`;
             case 'ask':
                 return html`<ask-view></ask-view>`;
             case 'settings':
