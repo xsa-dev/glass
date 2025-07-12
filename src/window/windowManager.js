@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('os');
 const util = require('util');
 const execFile = util.promisify(require('child_process').execFile);
+const listenService = require('../features/listen/listenService');
 
 // Try to load sharp, but don't fail if it's not available
 let sharp;
@@ -94,7 +95,7 @@ async function toggleFeature(featureName, options = {}) {
     if (featureName === 'listen') {
         console.log(`[WindowManager] Toggling feature: ${featureName}`);
         const listenWindow = windowPool.get(featureName);
-        const listenService = global.listenService;
+        // const listenService = global.listenService;
         if (listenService && listenService.isSessionActive()) {
             console.log('[WindowManager] Listen session is active, closing it via toggle.');
             await listenService.closeSession();

@@ -1,4 +1,4 @@
-const { BrowserWindow, app } = require('electron');
+const { ipcMain, BrowserWindow } = require('electron');
 const SttService = require('./stt/sttService');
 const SummaryService = require('./summary/summaryService');
 const authService = require('../common/services/authService');
@@ -11,8 +11,9 @@ class ListenService {
         this.summaryService = new SummaryService();
         this.currentSessionId = null;
         this.isInitializingSession = false;
-        
+
         this.setupServiceCallbacks();
+        console.log('[ListenService] Service instance created.');
     }
 
     setupServiceCallbacks() {
@@ -43,6 +44,11 @@ class ListenService {
                 win.webContents.send(channel, data);
             }
         });
+    }
+
+    initialize() {
+        this.setupIpcHandlers();
+        console.log('[ListenService] Initialized and ready.');
     }
 
     async handleTranscriptionComplete(speaker, text) {
@@ -183,6 +189,8 @@ class ListenService {
             // Close STT sessions
             await this.sttService.closeSessions();
 
+            await this.stopMacOSAudioCapture();
+
             // End database session
             if (this.currentSessionId) {
                 await sessionRepository.end(this.currentSessionId);
@@ -215,8 +223,6 @@ class ListenService {
     }
 
     setupIpcHandlers() {
-        const { ipcMain } = require('electron');
-
         ipcMain.handle('send-audio-content', async (event, { data, mimeType }) => {
             try {
                 await this.sendAudioContent(data, mimeType);
@@ -282,4 +288,5 @@ class ListenService {
     }
 }
 
-module.exports = ListenService;
+const listenService = new ListenService();
+module.exports = listenService;
