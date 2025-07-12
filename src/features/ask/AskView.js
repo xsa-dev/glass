@@ -735,7 +735,6 @@ export class AskView extends LitElement {
         this.handleCopy = this.handleCopy.bind(this);
         this.clearResponseContent = this.clearResponseContent.bind(this);
         this.processAssistantQuestion = this.processAssistantQuestion.bind(this);
-        this.handleToggleTextInput = this.handleToggleTextInput.bind(this);
         this.handleEscKey = this.handleEscKey.bind(this);
         this.handleDocumentClick = this.handleDocumentClick.bind(this);
         this.handleWindowBlur = this.handleWindowBlur.bind(this);
@@ -916,7 +915,6 @@ export class AskView extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.on('ask-global-send', this.handleGlobalSendRequest);
-            ipcRenderer.on('toggle-text-input', this.handleToggleTextInput);
             ipcRenderer.on('receive-question-from-assistant', this.handleQuestionFromAssistant);
             ipcRenderer.on('hide-text-input', () => {
                 console.log('📤 Hide text input signal received');
@@ -979,7 +977,6 @@ export class AskView extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.removeListener('ask-global-send', this.handleGlobalSendRequest);
-            ipcRenderer.removeListener('toggle-text-input', this.handleToggleTextInput);
             ipcRenderer.removeListener('clear-ask-response', () => { });
             ipcRenderer.removeListener('hide-text-input', () => { });
             ipcRenderer.removeListener('window-hide-animation', () => { });
@@ -1148,10 +1145,6 @@ export class AskView extends LitElement {
         this.renderContent(); // 👈 updateResponseContent() 대신 renderContent() 호출
     }
 
-    handleToggleTextInput() {
-        this.showTextInput = !this.showTextInput;
-        this.requestUpdate();
-    }
 
     requestWindowResize(targetHeight) {
         if (window.require) {

@@ -120,65 +120,7 @@ async function toggleFeature(featureName) {
         }
 
         if (askWindow.isVisible()) {
-            try {
-                const hasResponse = await askWindow.webContents.executeJavaScript(`
-                    (() => {
-                        try {
-                            // PickleGlassApp의 Shadow DOM 내부로 접근
-                            const pickleApp = document.querySelector('pickle-glass-app');
-                            if (!pickleApp || !pickleApp.shadowRoot) {
-                                console.log('PickleGlassApp not found');
-                                return false;
-                            }
-                            
-                            // PickleGlassApp의 shadowRoot 내부에서 ask-view 찾기
-                            const askView = pickleApp.shadowRoot.querySelector('ask-view');
-                            if (!askView) {
-                                console.log('AskView not found in PickleGlassApp shadow DOM');
-                                return false;
-                            }
-                            
-                            console.log('AskView found, checking state...');
-                            console.log('currentResponse:', askView.currentResponse);
-                            console.log('isLoading:', askView.isLoading);
-                            console.log('isStreaming:', askView.isStreaming);
-                            
-                            const hasContent = !!(askView.currentResponse || askView.isLoading || askView.isStreaming);
-                            
-                            if (!hasContent && askView.shadowRoot) {
-                                const responseContainer = askView.shadowRoot.querySelector('.response-container');
-                                if (responseContainer && !responseContainer.classList.contains('hidden')) {
-                                    const textContent = responseContainer.textContent.trim();
-                                    const hasActualContent = textContent && 
-                                        !textContent.includes('Ask a question to see the response here') &&
-                                        textContent.length > 0;
-                                    console.log('Response container content check:', hasActualContent);
-                                    return hasActualContent;
-                                }
-                            }
-                            
-                            return hasContent;
-                        } catch (error) {
-                            console.error('Error checking AskView state:', error);
-                            return false;
-                        }
-                    })()
-                `);
-
-                console.log(`[WindowManager] Ask window visible, hasResponse: ${hasResponse}`);
-
-                if (hasResponse) {
-                    askWindow.webContents.send('toggle-text-input');
-                    console.log('[WindowManager] Sent toggle-text-input command');
-                } else {
-                    console.log('[WindowManager] No response found, closing window');
-                    askWindow.webContents.send('window-hide-animation');
-                }
-            } catch (error) {
-                console.error('[WindowManager] Error checking Ask window state:', error);
-                console.log('[WindowManager] Falling back to toggle text input');
-                askWindow.webContents.send('toggle-text-input');
-            }
+            askWindow.webContents.send('ask-global-send');
         } else {
             console.log('[WindowManager] Showing hidden Ask window');
             askWindow.show();
