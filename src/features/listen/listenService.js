@@ -217,18 +217,6 @@ class ListenService {
     setupIpcHandlers() {
         const { ipcMain } = require('electron');
 
-        ipcMain.handle('is-session-active', async () => {
-            const isActive = this.isSessionActive();
-            console.log(`Checking session status. Active: ${isActive}`);
-            return isActive;
-        });
-
-        ipcMain.handle('initialize-openai', async (event, profile = 'interview', language = 'en') => {
-            console.log(`Received initialize-openai request with profile: ${profile}, language: ${language}`);
-            const success = await this.initializeSession(language);
-            return success;
-        });
-
         ipcMain.handle('send-audio-content', async (event, { data, mimeType }) => {
             try {
                 await this.sendAudioContent(data, mimeType);
@@ -279,10 +267,6 @@ class ListenService {
                 return { success: false, error: error.message };
             }
         });
-
-        // ipcMain.handle('close-session', async () => {
-        //     return await this.closeSession();
-        // });
 
         ipcMain.handle('update-google-search-setting', async (event, enabled) => {
             try {

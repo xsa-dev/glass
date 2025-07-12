@@ -80,10 +80,6 @@ export class PickleGlassApp extends LitElement {
             ipcRenderer.on('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
-            // ipcRenderer.on('start-listening-session', () => {
-            //     console.log('Received start-listening-session command, calling handleListenClick.');
-            //     this.handleListenClick();
-            // });
         }
     }
 
@@ -92,15 +88,10 @@ export class PickleGlassApp extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.removeAllListeners('click-through-toggled');
-            // ipcRenderer.removeAllListeners('start-listening-session');
         }
     }
 
     updated(changedProperties) {
-        // if (changedProperties.has('isMainViewVisible') || changedProperties.has('currentView')) {
-        //     this.requestWindowResize();
-        // }
-
         if (changedProperties.has('currentView')) {
             const viewContainer = this.shadowRoot?.querySelector('.view-container');
             if (viewContainer) {
@@ -128,36 +119,6 @@ export class PickleGlassApp extends LitElement {
             this.updateLayoutMode();
         }
     }
-
-
-    // async handleListenClick() {
-    //     if (window.require) {
-    //         const { ipcRenderer } = window.require('electron');
-    //         const isActive = await ipcRenderer.invoke('is-session-active');
-    //         // if (isActive) {
-    //         //     console.log('Session is already active. No action needed.');
-    //         //     return;
-    //         // }
-    //     }
-
-    //     if (window.pickleGlass) {
-    //         // await window.pickleGlass.initializeopenai(this.selectedProfile, this.selectedLanguage);
-    //         window.pickleGlass.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
-    //     }
-
-    //     // 🔄 Clear previous summary/analysis when a new listening session begins
-    //     this.structuredData = {
-    //         summary: [],
-    //         topic: { header: '', bullets: [] },
-    //         actions: [],
-    //         followUps: [],
-    //     };
-
-    //     this.currentResponseIndex = -1;
-    //     this.startTime = Date.now();
-    //     this.currentView = 'listen';
-    //     this.isMainViewVisible = true;
-    // }
 
     async handleClose() {
         if (window.require) {
