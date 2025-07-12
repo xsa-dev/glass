@@ -110,6 +110,13 @@ const LATEST_SCHEMA = {
             { name: 'selected_stt_model', type: 'TEXT' },
             { name: 'updated_at', type: 'INTEGER' }
         ]
+    },
+    shortcuts: {
+        columns: [
+            { name: 'action', type: 'TEXT PRIMARY KEY' },
+            { name: 'accelerator', type: 'TEXT NOT NULL' },
+            { name: 'created_at', type: 'INTEGER' }
+        ]
     }
 };
 
