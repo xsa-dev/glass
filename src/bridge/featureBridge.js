@@ -6,6 +6,8 @@ const whisperService = require('../features/common/services/whisperService');
 const ollamaService = require('../features/common/services/ollamaService');
 const modelStateService = require('../features/common/services/modelStateService');
 
+const askService = require('../features/ask/askService');
+const listenService = require('../features/listen/listenService');
 
 module.exports = {
   // Renderer로부터의 요청을 수신

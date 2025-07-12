@@ -77,110 +77,6 @@ function updateLayout() {
 let movementManager = null;
 const windowBridge = require('../bridge/windowBridge');
 
-/**
- * 
- * @param {'listen'|'ask'|'settings'} featureName
- * @param {{
-*   listen?:   { targetVisibility?: 'show'|'hide' },
-*   ask?:      { targetVisibility?: 'show'|'hide', questionText?: string },
-*   settings?: { targetVisibility?: 'show'|'hide' }
-* }} [options={}]
-*/
-async function toggleFeature(featureName, options = {}) {
-    if (!windowPool.get(featureName) && currentHeaderState === 'main') {
-        createFeatureWindows(windowPool.get('header'));
-    }
-
-    const header = windowPool.get('header');
-    if (featureName === 'listen') {
-        console.log(`[WindowManager] Toggling feature: ${featureName}`);
-        const listenWindow = windowPool.get(featureName);
-        // const listenService = global.listenService;
-        if (listenService && listenService.isSessionActive()) {
-            console.log('[WindowManager] Listen session is active, closing it via toggle.');
-            await listenService.closeSession();
-            listenWindow.webContents.send('session-state-changed', { isActive: false });
-            header.webContents.send('session-state-text', 'Done');
-            // return;
-        } else {
-            if (listenWindow.isVisible()) {
-                listenWindow.webContents.send('window-hide-animation');
-                listenWindow.webContents.send('session-state-changed', { isActive: false });
-                header.webContents.send('session-state-text', 'Listen');
-            } else {
-                listenWindow.show();
-                updateLayout();
-                listenWindow.webContents.send('window-show-animation');
-                await listenService.initializeSession();
-                listenWindow.webContents.send('session-state-changed', { isActive: true });
-                header.webContents.send('session-state-text', 'Stop');
-            }
-        }
-    }
-
-    if (featureName === 'ask') {
-        let askWindow = windowPool.get('ask');
-
-        if (!askWindow || askWindow.isDestroyed()) {
-            console.log('[WindowManager] Ask window not found, creating new one');
-            return;
-        }
-
-        const questionText = options?.ask?.questionText ?? null;
-        const targetVisibility = options?.ask?.targetVisibility ?? null;
-        if (askWindow.isVisible()) {
-            if (questionText) {
-                askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
-            } else {
-                updateLayout();
-                if (targetVisibility === 'show') {
-                    askWindow.webContents.send('ask:showTextInput');
-                } else {
-                    askWindow.webContents.send('window-hide-animation');
-                }
-            }
-        } else {
-            console.log('[WindowManager] Showing hidden Ask window');
-            askWindow.show();
-            updateLayout();
-            if (questionText) {
-                askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
-            }
-            askWindow.webContents.send('window-show-animation');
-        }
-    }
-
-    if (featureName === 'settings') {
-        const settingsWindow = windowPool.get(featureName);
-
-        if (settingsWindow) {
-            if (settingsWindow.isDestroyed()) {
-                console.error(`Window ${featureName} is destroyed, cannot toggle`);
-                return;
-            }
-
-            if (settingsWindow.isVisible()) {
-                if (featureName === 'settings') {
-                    settingsWindow.webContents.send('settings-window-hide-animation');
-                } else {
-                    settingsWindow.webContents.send('window-hide-animation');
-                }
-            } else {
-                try {
-                    settingsWindow.show();
-                    updateLayout();
-
-                    settingsWindow.webContents.send('window-show-animation');
-                } catch (e) {
-                    console.error('Error showing window:', e);
-                }
-            }
-        } else {
-            console.error(`Window not found for feature: ${featureName}`);
-            console.error('Available windows:', Array.from(windowPool.keys()));
-        }
-    }
-}
 
 
 function createFeatureWindows(header, namesToCreate) {
@@ -1111,6 +1007,112 @@ function setupIpcHandlers(movementManager) {
         toggleFeature('ask', {ask: { questionText: question }});
         return { success: true };
     });
+}
+
+
+/**
+ * 
+ * @param {'listen'|'ask'|'settings'} featureName
+ * @param {{
+*   listen?:   { targetVisibility?: 'show'|'hide' },
+*   ask?:      { targetVisibility?: 'show'|'hide', questionText?: string },
+*   settings?: { targetVisibility?: 'show'|'hide' }
+* }} [options={}]
+*/
+async function toggleFeature(featureName, options = {}) {
+    if (!windowPool.get(featureName) && currentHeaderState === 'main') {
+        createFeatureWindows(windowPool.get('header'));
+    }
+
+    const header = windowPool.get('header');
+    if (featureName === 'listen') {
+        console.log(`[WindowManager] Toggling feature: ${featureName}`);
+        const listenWindow = windowPool.get(featureName);
+        // const listenService = global.listenService;
+        if (listenService && listenService.isSessionActive()) {
+            console.log('[WindowManager] Listen session is active, closing it via toggle.');
+            await listenService.closeSession();
+            listenWindow.webContents.send('session-state-changed', { isActive: false });
+            header.webContents.send('session-state-text', 'Done');
+            // return;
+        } else {
+            if (listenWindow.isVisible()) {
+                listenWindow.webContents.send('window-hide-animation');
+                listenWindow.webContents.send('session-state-changed', { isActive: false });
+                header.webContents.send('session-state-text', 'Listen');
+            } else {
+                listenWindow.show();
+                updateLayout();
+                listenWindow.webContents.send('window-show-animation');
+                await listenService.initializeSession();
+                listenWindow.webContents.send('session-state-changed', { isActive: true });
+                header.webContents.send('session-state-text', 'Stop');
+            }
+        }
+    }
+
+    if (featureName === 'ask') {
+        let askWindow = windowPool.get('ask');
+
+        if (!askWindow || askWindow.isDestroyed()) {
+            console.log('[WindowManager] Ask window not found, creating new one');
+            return;
+        }
+
+        const questionText = options?.ask?.questionText ?? null;
+        const targetVisibility = options?.ask?.targetVisibility ?? null;
+        if (askWindow.isVisible()) {
+            if (questionText) {
+                askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
+            } else {
+                updateLayout();
+                if (targetVisibility === 'show') {
+                    askWindow.webContents.send('ask:showTextInput');
+                } else {
+                    askWindow.webContents.send('window-hide-animation');
+                }
+            }
+        } else {
+            console.log('[WindowManager] Showing hidden Ask window');
+            askWindow.show();
+            updateLayout();
+            if (questionText) {
+                askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
+            }
+            askWindow.webContents.send('window-show-animation');
+        }
+    }
+
+    if (featureName === 'settings') {
+        const settingsWindow = windowPool.get(featureName);
+
+        if (settingsWindow) {
+            if (settingsWindow.isDestroyed()) {
+                console.error(`Window ${featureName} is destroyed, cannot toggle`);
+                return;
+            }
+
+            if (settingsWindow.isVisible()) {
+                if (featureName === 'settings') {
+                    settingsWindow.webContents.send('settings-window-hide-animation');
+                } else {
+                    settingsWindow.webContents.send('window-hide-animation');
+                }
+            } else {
+                try {
+                    settingsWindow.show();
+                    updateLayout();
+
+                    settingsWindow.webContents.send('window-show-animation');
+                } catch (e) {
+                    console.error('Error showing window:', e);
+                }
+            }
+        } else {
+            console.error(`Window not found for feature: ${featureName}`);
+            console.error('Available windows:', Array.from(windowPool.keys()));
+        }
+    }
 }
 
 
