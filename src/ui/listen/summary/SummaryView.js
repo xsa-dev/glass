@@ -262,9 +262,8 @@ export class SummaryView extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.on('summary-update', (event, data) => {
+        if (window.api && window.api.listen) {
+            window.api.listen.onSummaryUpdate((event, data) => {
                 this.structuredData = data;
                 this.requestUpdate();
             });
@@ -273,9 +272,8 @@ export class SummaryView extends LitElement {
 
     disconnectedCallback() {
         super.disconnectedCallback();
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeAllListeners('summary-update');
+        if (window.api && window.api.listen) {
+            window.api.listen.removeOnSummaryUpdate(() => {});
         }
     }
 
@@ -408,18 +406,16 @@ export class SummaryView extends LitElement {
     async handleRequestClick(requestText) {
         console.log('🔥 Analysis request clicked:', requestText);
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-
+        if (window.api && window.api.listen) {
             try {
-                const isAskViewVisible = await ipcRenderer.invoke('is-ask-window-visible', 'ask');
+                const isAskViewVisible = await window.api.listen.isAskWindowVisible('ask');
 
                 if (!isAskViewVisible) {
-                    await ipcRenderer.invoke('toggle-feature', 'ask');
+                    await window.api.listen.toggleFeature('ask');
                     await new Promise(resolve => setTimeout(resolve, 100));
                 }
 
-                const result = await ipcRenderer.invoke('send-question-to-ask', requestText);
+                const result = await window.api.listen.sendQuestionToAsk(requestText);
 
                 if (result.success) {
                     console.log('✅ Question sent to AskView successfully');

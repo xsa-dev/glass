@@ -95,17 +95,15 @@ export class SttView extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.on('stt-update', this.handleSttUpdate);
+        if (window.api && window.api.listen) {
+            window.api.listen.onSttUpdate(this.handleSttUpdate);
         }
     }
 
     disconnectedCallback() {
         super.disconnectedCallback();
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeListener('stt-update', this.handleSttUpdate);
+        if (window.api && window.api.listen) {
+            window.api.listen.removeOnSttUpdate(this.handleSttUpdate);
         }
     }
 
