@@ -381,11 +381,10 @@ class ModelStateService extends EventEmitter {
 
     async removeApiKey(provider) {
         if (this.state.apiKeys[provider]) {
-            delete this.state.apiKeys[provider];
-            this._saveState();
-            
+            this.state.apiKeys[provider] = null;
+            await providerSettingsRepository.remove(provider);
+            await this._saveState();
             this._autoSelectAvailableModels([]);
-            
             this._broadcastToAllWindows('model-state:updated', this.state);
             this._broadcastToAllWindows('settings-updated');
             return true;
@@ -527,7 +526,10 @@ class ModelStateService extends EventEmitter {
         
         // Auto warm-up for Ollama models
         if (type === 'llm' && modelId && modelId !== previousModelId) {
-            this._autoWarmUpOllamaModel(modelId, previousModelId);
+            const provider = this.getProviderForModel('llm', modelId);
+            if (provider === 'ollama') {
+                this._autoWarmUpOllamaModel(modelId, previousModelId);
+            }
         }
         
         this._broadcastToAllWindows('model-state:updated', this.state);
