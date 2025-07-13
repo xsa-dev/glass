@@ -719,15 +719,15 @@ export class AskView extends LitElement {
         this.headerText = 'AI Response';
         this.headerAnimating = false;
         this.isStreaming = false;
-        this.accumulatedResponse = '';
+        // this.accumulatedResponse = '';
 
         this.marked = null;
         this.hljs = null;
         this.DOMPurify = null;
         this.isLibrariesLoaded = false;
 
-        this.handleStreamChunk = this.handleStreamChunk.bind(this);
-        this.handleStreamEnd = this.handleStreamEnd.bind(this);
+        // this.handleStreamChunk = this.handleStreamChunk.bind(this);
+        // this.handleStreamEnd = this.handleStreamEnd.bind(this);
         this.handleSendText = this.handleSendText.bind(this);
         this.handleTextKeydown = this.handleTextKeydown.bind(this);
         this.handleCopy = this.handleCopy.bind(this);
@@ -784,11 +784,18 @@ export class AskView extends LitElement {
                 }
             });
 
-            window.api.askView.onResponseChunk(this.handleStreamChunk);
-            window.api.askView.onResponseStreamEnd(this.handleStreamEnd);
+            // window.api.askView.onResponseChunk(this.handleStreamChunk);
+            // window.api.askView.onResponseStreamEnd(this.handleStreamEnd);
 
             window.api.askView.onScrollResponseUp(() => this.handleScroll('up'));
             window.api.askView.onScrollResponseDown(() => this.handleScroll('down'));
+            window.api.askView.onAskStateUpdate((event, newState) => {
+                this.currentResponse = newState.currentResponse;
+                this.currentQuestion = newState.currentQuestion;
+                this.isLoading = newState.isLoading;
+                this.isStreaming = newState.isStreaming;
+                this.showTextInput = newState.showTextInput;
+            });
             console.log('✅ AskView: IPC 이벤트 리스너 등록 완료');
         }
     }
@@ -816,9 +823,14 @@ export class AskView extends LitElement {
         Object.values(this.lineCopyTimeouts).forEach(timeout => clearTimeout(timeout));
 
         if (window.api) {
-            // Note: We need to keep references to the actual callbacks used in connectedCallback
-            // For now, we'll just log that removal is needed
-            // TODO: Store callback references for proper removal
+            window.api.askView.removeOnAskStateUpdate(this.handleAskStateUpdate);
+            window.api.askView.removeOnSendQuestionToRenderer(this.handleQuestionFromAssistant);
+            window.api.askView.removeOnHideTextInput(this.handleHideTextInput);
+            window.api.askView.removeOnShowTextInput(this.handleShowTextInput);
+            window.api.askView.removeOnResponseChunk(this.handleStreamChunk);
+            window.api.askView.removeOnResponseStreamEnd(this.handleStreamEnd);
+            window.api.askView.removeOnScrollResponseUp(this.handleScroll);
+            window.api.askView.removeOnScrollResponseDown(this.handleScroll);
             console.log('✅ AskView: IPC 이벤트 리스너 제거 필요');
         }
     }
@@ -905,9 +917,9 @@ export class AskView extends LitElement {
         this.isStreaming = false;
         this.headerText = 'AI Response';
         this.showTextInput = true;
-        this.accumulatedResponse = '';
-        this.requestUpdate();
-        this.renderContent();
+        // this.accumulatedResponse = '';
+        // this.requestUpdate();
+        // this.renderContent();
     }
 
     handleInputFocus() {
@@ -975,55 +987,52 @@ export class AskView extends LitElement {
     }
 
     // --- 스트리밍 처리 핸들러 ---
-    handleStreamChunk(event, { token }) {
-        if (!this.isStreaming) {
-            this.isStreaming = true;
-            this.isLoading = false;
-            this.accumulatedResponse = '';
-            const container = this.shadowRoot.getElementById('responseContainer');
-            if (container) container.innerHTML = '';
-            this.headerText = 'AI Response';
-            this.headerAnimating = false;
-            this.requestUpdate();
-        }
-        this.accumulatedResponse += token;
-        this.renderContent();
-    }
+    // handleStreamChunk(event, { token }) {
+    //     if (!this.isStreaming) {
+    //         this.isStreaming = true;
+    //         this.isLoading = false;
+    //         this.accumulatedResponse = '';
+    //         const container = this.shadowRoot.getElementById('responseContainer');
+    //         if (container) container.innerHTML = '';
+    //         this.headerText = 'AI Response';
+    //         this.headerAnimating = false;
+    //         this.requestUpdate();
+    //     }
+    //     this.accumulatedResponse += token;
+    //     this.renderContent();
+    // }
 
-    handleStreamEnd() {
-        this.isStreaming = false;
-        this.currentResponse = this.accumulatedResponse;
-        if (this.headerText !== 'AI Response') {
-            this.headerText = 'AI Response';
-            this.requestUpdate();
-        }
-        this.renderContent();
-    }
+    // handleStreamEnd() {
+    //     this.isStreaming = false;
+    //     this.currentResponse = this.accumulatedResponse;
+    //     if (this.headerText !== 'AI Response') {
+    //         this.headerText = 'AI Response';
+    //         this.requestUpdate();
+    //     }
+    //     this.renderContent();
+    // }
 
     // ✨ 렌더링 로직 통합
     renderContent() {
-        if (!this.isLoading && !this.isStreaming && !this.currentResponse) {
-            const responseContainer = this.shadowRoot.getElementById('responseContainer');
-            if (responseContainer) responseContainer.innerHTML = '<div class="empty-state">Ask a question to see the response here</div>';
-            return;
-        }
-
         const responseContainer = this.shadowRoot.getElementById('responseContainer');
         if (!responseContainer) return;
-
+    
+        // ✨ 로딩 상태를 먼저 확인
         if (this.isLoading) {
-            responseContainer.innerHTML = `
-                <div class="loading-dots">
-                    <div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>
-                </div>`;
+            responseContainer.innerHTML = `<div class="loading-dots">...</div>`;
             return;
         }
-
-        let textToRender = this.isStreaming ? this.accumulatedResponse : this.currentResponse;
-
-        // 불완전한 마크다운 수정
-        textToRender = this.fixIncompleteMarkdown(textToRender);
+        
+        // ✨ 응답이 없을 때의 처리
+        if (!this.currentResponse) {
+            responseContainer.innerHTML = `<div class="empty-state">...</div>`;
+            return;
+        }
+        
+        // ✨ isStreaming이나 accumulatedResponse 대신 currentResponse를 직접 사용
+        let textToRender = this.fixIncompleteMarkdown(this.currentResponse);
         textToRender = this.fixIncompleteCodeBlocks(textToRender);
+    
 
         if (this.isLibrariesLoaded && this.marked && this.DOMPurify) {
             try {
@@ -1260,26 +1269,32 @@ export class AskView extends LitElement {
 
         textInput.value = '';
 
-        this.currentQuestion = text;
-        this.lineCopyState = {};
-        this.showTextInput = false;
-        this.isLoading = true;
-        this.isStreaming = false;
-        this.currentResponse = '';
-        this.accumulatedResponse = '';
-        this.startHeaderAnimation();
-        this.requestUpdate();
-        this.renderContent();
+        // this.currentQuestion = text;
+        // this.lineCopyState = {};
+        // this.showTextInput = false;
+        // this.isLoading = true;
+        // this.isStreaming = false;
+        // this.currentResponse = '';
+        // this.accumulatedResponse = '';
+        // this.startHeaderAnimation();
+        // this.requestUpdate();
+        // this.renderContent();
 
         if (window.api) {
             window.api.askView.sendMessage(text).catch(error => {
                 console.error('Error sending text:', error);
-                this.isLoading = false;
-                this.isStreaming = false;
-                this.currentResponse = `Error: ${error.message}`;
-                this.renderContent();
             });
         }
+
+        // if (window.api) {
+        //     window.api.askView.sendMessage(text).catch(error => {
+        //         console.error('Error sending text:', error);
+        //         this.isLoading = false;
+        //         this.isStreaming = false;
+        //         this.currentResponse = `Error: ${error.message}`;
+        //         this.renderContent();
+        //     });
+        // }
     }
 
     handleTextKeydown(e) {
@@ -1297,16 +1312,33 @@ export class AskView extends LitElement {
         }
     }
 
+    // updated(changedProperties) {
+    //     super.updated(changedProperties);
+    //     if (changedProperties.has('isLoading')) {
+    //         this.renderContent();
+    //     }
+
+    //     if (changedProperties.has('showTextInput') || changedProperties.has('isLoading')) {
+    //         this.adjustWindowHeightThrottled();
+    //     }
+
+    //     if (changedProperties.has('showTextInput') && this.showTextInput) {
+    //         this.focusTextInput();
+    //     }
+    // }
+
     updated(changedProperties) {
         super.updated(changedProperties);
-        if (changedProperties.has('isLoading')) {
+    
+        // ✨ isLoading 또는 currentResponse가 변경될 때마다 뷰를 다시 그립니다.
+        if (changedProperties.has('isLoading') || changedProperties.has('currentResponse')) {
             this.renderContent();
         }
-
-        if (changedProperties.has('showTextInput') || changedProperties.has('isLoading')) {
+    
+        if (changedProperties.has('showTextInput') || changedProperties.has('isLoading') || changedProperties.has('currentResponse')) {
             this.adjustWindowHeightThrottled();
         }
-
+    
         if (changedProperties.has('showTextInput') && this.showTextInput) {
             this.focusTextInput();
         }
@@ -1327,6 +1359,7 @@ export class AskView extends LitElement {
 
     render() {
         const hasResponse = this.isLoading || this.currentResponse || this.isStreaming;
+        const headerText = this.isLoading ? 'Thinking...' : 'AI Response';
 
         return html`
             <div class="ask-container">
@@ -1339,7 +1372,7 @@ export class AskView extends LitElement {
                                 <path d="M8 12l2 2 4-4" />
                             </svg>
                         </div>
-                        <span class="response-label ${this.headerAnimating ? 'animating' : ''}">${this.headerText}</span>
+                        <span class="response-label">${headerText}</span>
                     </div>
                     <div class="header-right">
                         <span class="question-text">${this.getTruncatedQuestion(this.currentQuestion)}</span>
