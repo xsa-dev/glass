@@ -70,16 +70,16 @@ module.exports = {
     ipcMain.handle('stop-screen-capture', async () => askService.handleStopScreenCapture());
 
     // Listen
-    ipcMain.handle('send-audio-content', async (event, { data, mimeType }) => await listenService.handleSendAudioContent(data, mimeType));
-    ipcMain.handle('send-system-audio-content', async (event, { data, mimeType }) => {
+    ipcMain.handle('listen:sendMicAudio', async (event, { data, mimeType }) => await listenService.handleSendMicAudioContent(data, mimeType));
+    ipcMain.handle('listen:sendSystemAudio', async (event, { data, mimeType }) => {
         const result = await listenService.sttService.sendSystemAudioContent(data, mimeType);
         if(result.success) {
             listenService.sendToRenderer('system-audio-data', { data });
         }
         return result;
     });
-    ipcMain.handle('start-macos-audio', async () => await listenService.handleStartMacosAudio());
-    ipcMain.handle('stop-macos-audio', async () => await listenService.handleStopMacosAudio());
+    ipcMain.handle('listen:startMacosSystemAudio', async () => await listenService.handleStartMacosAudio());
+    ipcMain.handle('listen:stopMacosSystemAudio', async () => await listenService.handleStopMacosAudio());
     ipcMain.handle('update-google-search-setting', async (event, enabled) => await listenService.handleUpdateGoogleSearchSetting(enabled));
     ipcMain.handle('listen:changeSession', async (event, listenButtonText) => {
       console.log('[FeatureBridge] listen:changeSession from mainheader', listenButtonText);

@@ -335,7 +335,7 @@ async function setupMicProcessing(micStream) {
             const pcm16 = convertFloat32ToInt16(processedChunk);
             const b64 = arrayBufferToBase64(pcm16.buffer);
 
-            window.api.listenCapture.sendAudioContent({
+            window.api.listenCapture.sendMicAudioContent({
                 data: b64,
                 mimeType: 'audio/pcm;rate=24000',
             });
@@ -368,7 +368,7 @@ function setupLinuxMicProcessing(micStream) {
             const pcmData16 = convertFloat32ToInt16(chunk);
             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-            await window.api.listenCapture.sendAudioContent({
+            await window.api.listenCapture.sendMicAudioContent({
                 data: base64Data,
                 mimeType: 'audio/pcm;rate=24000',
             });
@@ -517,15 +517,15 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             console.log('Starting macOS capture with SystemAudioDump...');
 
             // Start macOS audio capture
-            const audioResult = await window.api.listenCapture.startMacosAudio();
+            const audioResult = await window.api.listenCapture.startMacosSystemAudio();
             if (!audioResult.success) {
                 console.warn('[listenCapture] macOS audio start failed:', audioResult.error);
 
                 // 이미 실행 중 → stop 후 재시도
                 if (audioResult.error === 'already_running') {
-                    await window.api.listenCapture.stopMacosAudio();
+                    await window.api.listenCapture.stopMacosSystemAudio();
                     await new Promise(r => setTimeout(r, 500));
-                    const retry = await window.api.listenCapture.startMacosAudio();
+                    const retry = await window.api.listenCapture.startMacosSystemAudio();
                     if (!retry.success) {
                         throw new Error('Retry failed: ' + retry.error);
                     }
@@ -720,7 +720,7 @@ function stopCapture() {
 
     // Stop macOS audio capture if running
     if (isMacOS) {
-        window.api.listenCapture.stopMacosAudio().catch(err => {
+        window.api.listenCapture.stopMacosSystemAudio().catch(err => {
             console.error('Error stopping macOS audio:', err);
         });
     }

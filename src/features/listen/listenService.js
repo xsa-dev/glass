@@ -205,8 +205,8 @@ class ListenService {
         }
     }
 
-    async sendAudioContent(data, mimeType) {
-        return await this.sttService.sendAudioContent(data, mimeType);
+    async sendMicAudioContent(data, mimeType) {
+        return await this.sttService.sendMicAudioContent(data, mimeType);
     }
 
     async startMacOSAudioCapture() {
@@ -280,8 +280,8 @@ class ListenService {
     }
 
     // `_createHandler`를 사용하여 핸들러들을 동적으로 생성합니다.
-    handleSendAudioContent = this._createHandler(
-        this.sendAudioContent,
+    handleSendMicAudioContent = this._createHandler(
+        this.sendMicAudioContent,
         null,
         'Error sending user audio:'
     );

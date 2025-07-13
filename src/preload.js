@@ -271,10 +271,10 @@ contextBridge.exposeInMainWorld('api', {
   // src/ui/listen/audioCore/listenCapture.js
   listenCapture: {
     // Audio Management
-    sendAudioContent: (data) => ipcRenderer.invoke('send-audio-content', data),
-    sendSystemAudioContent: (data) => ipcRenderer.invoke('send-system-audio-content', data),
-    startMacosAudio: () => ipcRenderer.invoke('start-macos-audio'),
-    stopMacosAudio: () => ipcRenderer.invoke('stop-macos-audio'),
+    sendMicAudioContent: (data) => ipcRenderer.invoke('listen:sendMicAudio', data),
+    sendSystemAudioContent: (data) => ipcRenderer.invoke('listen:sendSystemAudio', data),
+    startMacosSystemAudio: () => ipcRenderer.invoke('listen:startMacosSystemAudio'),
+    stopMacosSystemAudio: () => ipcRenderer.invoke('listen:stopMacosSystemAudio'),
     
     // Screen Capture
     captureScreenshot: (options) => ipcRenderer.invoke('capture-screenshot', options),
