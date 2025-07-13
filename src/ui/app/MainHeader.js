@@ -568,6 +568,17 @@ export class MainHeader extends LitElement {
         }
     }
 
+    async _handleAskClick() {
+        if (this.wasJustDragged) return;
+
+        try {
+            const channel = 'ask:toggleAskButton';
+            await this.invoke(channel);
+        } catch (error) {
+            console.error('IPC invoke for ask button failed:', error);
+        }
+    }
+
 
     renderShortcut(accelerator) {
         if (!accelerator) return html``;
@@ -636,7 +647,7 @@ export class MainHeader extends LitElement {
                         `}
                 </button>
 
-                <div class="header-actions ask-action" @click=${() => this.invoke('toggle-feature', 'ask')}>
+                <div class="header-actions ask-action" @click=${() => this._handleAskClick()}>
                     <div class="action-text">
                         <div class="action-text-content">Ask</div>
                     </div>

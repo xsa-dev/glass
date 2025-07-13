@@ -408,7 +408,7 @@ export class SummaryView extends LitElement {
 
         if (window.api) {
             try {
-                const result = await window.api.summaryView.sendQuestionToMain(requestText);
+                const result = await window.api.summaryView.sendQuestionFromSummary(requestText);
 
                 if (result.success) {
                     console.log('✅ Question sent to AskView successfully');

@@ -131,7 +131,7 @@ contextBridge.exposeInMainWorld('api', {
     adjustWindowHeight: (height) => ipcRenderer.invoke('adjust-window-height', height),
     
     // Message Handling
-    sendMessage: (text) => ipcRenderer.invoke('ask:sendMessage', text),
+    sendMessage: (text) => ipcRenderer.invoke('ask:sendQuestionFromAsk', text),
     
     // Listeners
     onSendQuestionToRenderer: (callback) => ipcRenderer.on('ask:sendQuestionToRenderer', callback),
@@ -170,7 +170,7 @@ contextBridge.exposeInMainWorld('api', {
   // src/ui/listen/summary/SummaryView.js
   summaryView: {
     // Message Handling
-    sendQuestionToMain: (text) => ipcRenderer.invoke('ask:sendQuestionToMain', text),
+    sendQuestionFromSummary: (text) => ipcRenderer.invoke('ask:sendQuestionFromSummary', text),
     
     // Listeners
     onSummaryUpdate: (callback) => ipcRenderer.on('summary-update', callback),

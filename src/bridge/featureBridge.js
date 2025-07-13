@@ -57,8 +57,10 @@ module.exports = {
     ipcMain.handle('ollama:shutdown', async (event, force = false) => await ollamaService.handleShutdown(event, force));
 
     // Ask
-    ipcMain.handle('ask:sendMessage', async (event, userPrompt, conversationHistoryRaw = []) => await askService.sendMessage(userPrompt, conversationHistoryRaw));
-  
+    ipcMain.handle('ask:sendQuestionFromAsk', async (event, userPrompt) => await askService.sendMessage(userPrompt));
+    ipcMain.handle('ask:sendQuestionFromSummary', async (event, userPrompt) => await askService.sendMessage(userPrompt));
+    ipcMain.handle('ask:toggleAskButton', async () => await askService.toggleAskButton());
+
     // Listen
     ipcMain.handle('send-audio-content', async (event, { data, mimeType }) => await listenService.handleSendAudioContent(data, mimeType));
     ipcMain.handle('send-system-audio-content', async (event, { data, mimeType }) => {
@@ -71,22 +73,6 @@ module.exports = {
     ipcMain.handle('start-macos-audio', async () => await listenService.handleStartMacosAudio());
     ipcMain.handle('stop-macos-audio', async () => await listenService.handleStopMacosAudio());
     ipcMain.handle('update-google-search-setting', async (event, enabled) => await listenService.handleUpdateGoogleSearchSetting(enabled));
-
-     // ModelStateService
-    ipcMain.handle('model:validate-key', async (e, { provider, key }) => await modelStateService.handleValidateKey(provider, key));
-    ipcMain.handle('model:get-all-keys', () => modelStateService.getAllApiKeys());
-    ipcMain.handle('model:set-api-key', async (e, { provider, key }) => await modelStateService.setApiKey(provider, key));
-    ipcMain.handle('model:remove-api-key', async (e, { provider }) => await modelStateService.handleRemoveApiKey(provider));
-    ipcMain.handle('model:get-selected-models', () => modelStateService.getSelectedModels());
-    ipcMain.handle('model:set-selected-model', async (e, { type, modelId }) => await modelStateService.handleSetSelectedModel(type, modelId));
-    ipcMain.handle('model:get-available-models', (e, { type }) => modelStateService.getAvailableModels(type));
-    ipcMain.handle('model:are-providers-configured', () => modelStateService.areProvidersConfigured());
-    ipcMain.handle('model:get-current-model-info', (e, { type }) => modelStateService.getCurrentModelInfo(type));
-    ipcMain.handle('model:get-provider-config', () => modelStateService.getProviderConfig());
-
-    console.log('[FeatureBridge] Initialized with all feature handlers.');
-
-    
     ipcMain.handle('listen:changeSession', async (event, listenButtonText) => {
       console.log('[FeatureBridge] listen:changeSession from mainheader', listenButtonText);
       try {
@@ -100,6 +86,21 @@ module.exports = {
 
 
 
+     // ModelStateService
+    ipcMain.handle('model:validate-key', async (e, { provider, key }) => await modelStateService.handleValidateKey(provider, key));
+    ipcMain.handle('model:get-all-keys', () => modelStateService.getAllApiKeys());
+    ipcMain.handle('model:set-api-key', async (e, { provider, key }) => await modelStateService.setApiKey(provider, key));
+    ipcMain.handle('model:remove-api-key', async (e, { provider }) => await modelStateService.handleRemoveApiKey(provider));
+    ipcMain.handle('model:get-selected-models', () => modelStateService.getSelectedModels());
+    ipcMain.handle('model:set-selected-model', async (e, { type, modelId }) => await modelStateService.handleSetSelectedModel(type, modelId));
+    ipcMain.handle('model:get-available-models', (e, { type }) => modelStateService.getAvailableModels(type));
+    ipcMain.handle('model:are-providers-configured', () => modelStateService.areProvidersConfigured());
+    ipcMain.handle('model:get-current-model-info', (e, { type }) => modelStateService.getCurrentModelInfo(type));
+    ipcMain.handle('model:get-provider-config', () => modelStateService.getProviderConfig());
+
+
+
+    console.log('[FeatureBridge] Initialized with all feature handlers.');
   },
 
   // Renderer로 상태를 전송
