@@ -7,6 +7,7 @@ const os = require('os');
 const util = require('util');
 const execFile = util.promisify(require('child_process').execFile);
 const listenService = require('../features/listen/listenService');
+const shortcutsService = require('../features/shortcuts/shortcutsService');
 
 // Try to load sharp, but don't fail if it's not available
 let sharp;
@@ -20,13 +21,6 @@ try {
 }
 const authService = require('../features/common/services/authService');
 const systemSettingsRepository = require('../features/common/repositories/systemSettings');
-const Store = require('electron-store');
-const shortCutStore = new Store({
-    name: 'user-preferences',
-    defaults: {
-        customKeybinds: {}
-    }
-});
 
 /* ────────────────[ GLASS BYPASS ]─────────────── */
 let liquidGlass;
@@ -263,13 +257,11 @@ function createFeatureWindows(header, namesToCreate) {
                     restoreClicks();
                     windowPool.delete('shortcut-settings');
                     console.log('[Shortcuts] Re-enabled after editing.');
-                    loadAndRegisterShortcuts(movementManager);
+                    shortcutsService.registerShortcuts(movementManager, windowPool);
                 });
 
                 shortcutEditor.webContents.once('dom-ready', async () => {
-                    const savedKeybinds = shortCutStore.get('customKeybinds', {});
-                    const defaultKeybinds = getDefaultKeybinds();
-                    const keybinds = { ...defaultKeybinds, ...savedKeybinds };
+                    const keybinds = await shortcutsService.loadKeybinds();
                     shortcutEditor.webContents.send('load-shortcuts', keybinds);
                 });
 
@@ -418,7 +410,7 @@ function createWindows() {
     layoutManager = new WindowLayoutManager(windowPool);
 
     header.webContents.once('dom-ready', () => {
-        loadAndRegisterShortcuts(movementManager);
+        shortcutsService.registerShortcuts(movementManager, windowPool);
     });
 
     setupIpcHandlers(movementManager);
@@ -475,32 +467,6 @@ function createWindows() {
     return windowPool;
 }
 
-function loadAndRegisterShortcuts(movementManager) {
-    if (windowPool.has('shortcut-settings')) {
-        console.log('[Shortcuts] Editing in progress, skipping registration.');
-        return;
-    }
-
-    const defaultKeybinds = getDefaultKeybinds();
-    const savedKeybinds = shortCutStore.get('customKeybinds', {});
-    const keybinds = { ...defaultKeybinds, ...savedKeybinds };
-
-    const sendToRenderer = (channel, ...args) => {
-        windowPool.forEach(win => {
-            if (win && !win.isDestroyed()) {
-                try {
-                    win.webContents.send(channel, ...args);
-                } catch (e) {
-                    // 창이 이미 닫혔을 수 있으므로 오류를 무시합니다.
-                }
-            }
-        });
-    };
-
-    updateGlobalShortcuts(keybinds, windowPool.get('header'), sendToRenderer, movementManager);
-}
-
-
 function setupIpcHandlers(movementManager) {
     setupApiKeyIPC();
 
@@ -535,50 +501,37 @@ function setupIpcHandlers(movementManager) {
         } else {         // 'apikey' | 'permission'
             destroyFeatureWindows();
         }
-        loadAndRegisterShortcuts(movementManager);
+        shortcutsService.registerShortcuts(movementManager, windowPool);
     });
 
-    ipcMain.on('update-keybinds', (event, newKeybinds) => {
-        updateGlobalShortcuts(newKeybinds);
+    ipcMain.handle('get-current-shortcuts', async () => {
+        return await shortcutsService.loadKeybinds();
     });
 
-    ipcMain.handle('get-current-shortcuts', () => {
-        const defaultKeybinds = getDefaultKeybinds();
-        const savedKeybinds = shortCutStore.get('customKeybinds', {});
-        return { ...defaultKeybinds, ...savedKeybinds };
-    });
-
-    // open-shortcut-editor handler moved to windowBridge.js to avoid duplication
-
-    ipcMain.handle('get-default-shortcuts', () => {
-        shortCutStore.set('customKeybinds', {});
-        return getDefaultKeybinds();
+    ipcMain.handle('get-default-shortcuts', async () => {
+        const defaults = shortcutsService.getDefaultKeybinds();
+        await shortcutsService.saveKeybinds(defaults);
+        // Reregister shortcuts with new defaults
+        await shortcutsService.registerShortcuts(movementManager, windowPool);
+        return defaults;
     });
 
     ipcMain.handle('save-shortcuts', async (event, newKeybinds) => {
         try {
-            const defaultKeybinds = getDefaultKeybinds();
-            const customKeybinds = {};
-            for (const key in newKeybinds) {
-                if (newKeybinds[key] && newKeybinds[key] !== defaultKeybinds[key]) {
-                    customKeybinds[key] = newKeybinds[key];
-                }
-            }
+            await shortcutsService.saveKeybinds(newKeybinds);
             
-            shortCutStore.set('customKeybinds', customKeybinds);
-            console.log('[Shortcuts] Custom keybinds saved to store:', customKeybinds);
-
             const editor = windowPool.get('shortcut-settings');
             if (editor && !editor.isDestroyed()) {
-                editor.close(); 
+                editor.close(); // This will trigger re-registration on 'closed' event
             } else {
-                loadAndRegisterShortcuts(movementManager);
+                // If editor wasn't open, re-register immediately
+                await shortcutsService.registerShortcuts(movementManager, windowPool);
             }
-
             return { success: true };
         } catch (error) {
             console.error("Failed to save shortcuts:", error);
-            loadAndRegisterShortcuts(movementManager);
+            // On failure, re-register old shortcuts to be safe
+            await shortcutsService.registerShortcuts(movementManager, windowPool);
             return { success: false, error: error.message };
         }
     });
@@ -1027,163 +980,6 @@ function setupApiKeyIPC() {
 //////// after_modelStateService ////////
 
 
-function getDefaultKeybinds() {
-    const isMac = process.platform === 'darwin';
-    return {
-        moveUp: isMac ? 'Cmd+Up' : 'Ctrl+Up',
-        moveDown: isMac ? 'Cmd+Down' : 'Ctrl+Down',
-        moveLeft: isMac ? 'Cmd+Left' : 'Ctrl+Left',
-        moveRight: isMac ? 'Cmd+Right' : 'Ctrl+Right',
-        toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
-        toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
-        nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
-        manualScreenshot: isMac ? 'Cmd+Shift+S' : 'Ctrl+Shift+S',
-        previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
-        nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
-        scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
-        scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
-    };
-}
-
-function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementManager) {
-    globalShortcut.unregisterAll();
-
-    if (sendToRenderer) {
-        sendToRenderer('shortcuts-updated', keybinds);
-        console.log('[Shortcuts] Broadcasted updated shortcuts to all windows.');
-    }
-    
-    // 하드코딩된 단축키 등록을 위해 변수 유지
-    const isMac = process.platform === 'darwin';
-    const modifier = isMac ? 'Cmd' : 'Ctrl';
-    const header = windowPool.get('header');
-    const state = header?.currentHeaderState || currentHeaderState;
-
-    // 기능 1: 사용자가 설정할 수 없는 '모니터 이동' 단축키 (기존 로직 유지)
-    const displays = screen.getAllDisplays();
-    if (displays.length > 1) {
-        displays.forEach((display, index) => {
-            const key = `${modifier}+Shift+${index + 1}`;
-            try {
-                globalShortcut.register(key, () => movementManager.moveToDisplay(display.id));
-                console.log(`Registered display switch shortcut: ${key} -> Display ${index + 1}`);
-            } catch (error) {
-                console.error(`Failed to register display switch ${key}:`, error);
-            }
-        });
-    }
-
-    // API 키 입력 상태에서는 필수 단축키(toggleVisibility) 외에는 아무것도 등록하지 않음
-    if (state === 'apikey') {
-        if (keybinds.toggleVisibility) {
-            try {
-                globalShortcut.register(keybinds.toggleVisibility, () => toggleAllWindowsVisibility());
-            } catch (error) {
-                console.error(`Failed to register toggleVisibility (${keybinds.toggleVisibility}):`, error);
-            }
-        }
-        console.log('ApiKeyHeader is active, skipping conditional shortcuts');
-        return;
-    }
-
-    // 기능 2: 사용자가 설정할 수 없는 '화면 가장자리 이동' 단축키 (기존 로직 유지)
-    const edgeDirections = [
-        { key: `${modifier}+Shift+Left`, direction: 'left' },
-        { key: `${modifier}+Shift+Right`, direction: 'right' },
-        // { key: `${modifier}+Shift+Up`, direction: 'up' },
-        // { key: `${modifier}+Shift+Down`, direction: 'down' },
-    ];
-    edgeDirections.forEach(({ key, direction }) => {
-        try {
-            globalShortcut.register(key, () => {
-                if (header && header.isVisible()) movementManager.moveToEdge(direction);
-            });
-        } catch (error) {
-            console.error(`Failed to register edge move for ${key}:`, error);
-        }
-    });
-
-
-    // 기능 3: 사용자가 설정 가능한 모든 단축키를 동적으로 등록 (새로운 방식 적용)
-    for (const action in keybinds) {
-        const accelerator = keybinds[action];
-        if (!accelerator) continue;
-
-        try {
-            let callback;
-            switch(action) {
-                case 'toggleVisibility':
-                    callback = () => toggleAllWindowsVisibility();
-                    break;
-                case 'nextStep':
-                    callback = () => toggleFeature('ask', {ask: { targetVisibility: 'show' }});
-                    break;
-                case 'scrollUp':
-                    callback = () => {
-                        // 'ask' 창을 명시적으로 가져옵니다.
-                        const askWindow = windowPool.get('ask');
-                        // 'ask' 창이 존재하고, 파괴되지 않았으며, 보이는 경우에만 이벤트를 전송합니다.
-                        if (askWindow && !askWindow.isDestroyed() && askWindow.isVisible()) {
-                            askWindow.webContents.send('scroll-response-up');
-                        }
-                    };
-                    break;
-                case 'scrollDown':
-                    callback = () => {
-                        // 'ask' 창을 명시적으로 가져옵니다.
-                        const askWindow = windowPool.get('ask');
-                        // 'ask' 창이 존재하고, 파괴되지 않았으며, 보이는 경우에만 이벤트를 전송합니다.
-                        if (askWindow && !askWindow.isDestroyed() && askWindow.isVisible()) {
-                            askWindow.webContents.send('scroll-response-down');
-                        }
-                    };
-                    break;
-                case 'moveUp':
-                    callback = () => { if (header && header.isVisible()) movementManager.moveStep('up'); };
-                    break;
-                case 'moveDown':
-                    callback = () => { if (header && header.isVisible()) movementManager.moveStep('down'); };
-                    break;
-                case 'moveLeft':
-                    callback = () => { if (header && header.isVisible()) movementManager.moveStep('left'); };
-                    break;
-                case 'moveRight':
-                    callback = () => { if (header && header.isVisible()) movementManager.moveStep('right'); };
-                    break;
-                case 'toggleClickThrough':
-                     callback = () => {
-                        mouseEventsIgnored = !mouseEventsIgnored;
-                        if(mainWindow && !mainWindow.isDestroyed()){
-                            mainWindow.setIgnoreMouseEvents(mouseEventsIgnored, { forward: true });
-                            mainWindow.webContents.send('click-through-toggled', mouseEventsIgnored);
-                        }
-                     };
-                     break;
-                case 'manualScreenshot':
-                    callback = () => {
-                        if(mainWindow && !mainWindow.isDestroyed()) {
-                             mainWindow.webContents.executeJavaScript('window.captureManualScreenshot && window.captureManualScreenshot();');
-                        }
-                    };
-                    break;
-                case 'previousResponse':
-                    callback = () => sendToRenderer('navigate-previous-response');
-                    break;
-                case 'nextResponse':
-                    callback = () => sendToRenderer('navigate-next-response');
-                    break;
-            }
-            
-            if (callback) {
-                globalShortcut.register(accelerator, callback);
-            }
-        } catch(e) {
-            console.error(`Failed to register shortcut for "${action}" (${accelerator}):`, e.message);
-        }
-    }
-}
-
-
 async function captureScreenshot(options = {}) {
     if (process.platform === 'darwin') {
         try {
@@ -1278,4 +1074,5 @@ module.exports = {
     getStoredProvider,
     getCurrentModelInfo,
     captureScreenshot,
+    toggleFeature, // Export toggleFeature so shortcutsService can use it
 };
