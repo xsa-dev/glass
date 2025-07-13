@@ -82,7 +82,7 @@ async function createSTT({ apiKey, language = 'en', callbacks = {}, usePortkey =
             silence_duration_ms: 100,
           },
           input_audio_noise_reduction: {
-            type: 'far_field'
+            type: 'near_field'
           }
         }
       };

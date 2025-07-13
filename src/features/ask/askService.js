@@ -1,6 +1,18 @@
 const { BrowserWindow } = require('electron');
 const { createStreamingLLM } = require('../common/ai/factory');
-const { getCurrentModelInfo, windowPool, updateLayout } = require('../../window/windowManager');
+// Lazy require helper to avoid circular dependency issues
+const getWindowManager = () => require('../../window/windowManager');
+
+const getWindowPool = () => {
+    try {
+        return getWindowManager().windowPool;
+    } catch {
+        return null;
+    }
+};
+const updateLayout = () => getWindowManager().updateLayout();
+const ensureAskWindowVisible = () => getWindowManager().ensureAskWindowVisible();
+
 const sessionRepository = require('../common/repositories/session');
 const askRepository = require('./repositories');
 const { getSystemPrompt } = require('../common/prompts/promptBuilder');
@@ -10,6 +22,7 @@ const os = require('os');
 const util = require('util');
 const execFile = util.promisify(require('child_process').execFile);
 const { desktopCapturer } = require('electron');
+const modelStateService = require('../common/services/modelStateService');
 
 // Try to load sharp, but don't fail if it's not available
 let sharp;
@@ -126,33 +139,33 @@ class AskService {
     }
 
     _broadcastState() {
-        const askWindow = windowPool.get('ask');
+        const askWindow = getWindowPool()?.get('ask');
         if (askWindow && !askWindow.isDestroyed()) {
             askWindow.webContents.send('ask:stateUpdate', this.state);
         }
     }
 
     async toggleAskButton() {
-        const askWindow = windowPool.get('ask');
+        const askWindow = getWindowPool()?.get('ask');
 
         // 답변이 있거나 스트리밍 중일 때
         const hasContent = this.state.isStreaming || (this.state.currentResponse && this.state.currentResponse.length > 0);
 
-        if (askWindow.isVisible() && hasContent) {
+        if (askWindow && askWindow.isVisible() && hasContent) {
             // 창을 닫는 대신, 텍스트 입력창만 토글합니다.
             this.state.showTextInput = !this.state.showTextInput;
             this._broadcastState(); // 변경된 상태 전파
         } else {
             // 기존의 창 보이기/숨기기 로직
-            if (askWindow.isVisible()) {
+            if (askWindow && askWindow.isVisible()) {
                 askWindow.webContents.send('window-hide-animation');
                 this.state.isVisible = false;
             } else {
                 console.log('[AskService] Showing hidden Ask window');
                 this.state.isVisible = true;
-                askWindow.show();
+                askWindow?.show();
                 updateLayout();
-                askWindow.webContents.send('window-show-animation');
+                askWindow?.webContents.send('window-show-animation');
             }
             // 창이 다시 열릴 때를 대비해 상태를 초기화하고 전파합니다.
             if (this.state.isVisible) {
@@ -182,6 +195,8 @@ class AskService {
      * @returns {Promise<{success: boolean, response?: string, error?: string}>}
      */
     async sendMessage(userPrompt, conversationHistoryRaw=[]) {
+        ensureAskWindowVisible();
+
         if (this.abortController) {
             this.abortController.abort('New request received.');
         }
@@ -212,7 +227,7 @@ class AskService {
             await askRepository.addAiMessage({ sessionId, role: 'user', content: userPrompt.trim() });
             console.log(`[AskService] DB: Saved user prompt to session ${sessionId}`);
             
-            const modelInfo = await getCurrentModelInfo(null, { type: 'llm' });
+            const modelInfo = modelStateService.getCurrentModelInfo('llm');
             if (!modelInfo || !modelInfo.apiKey) {
                 throw new Error('AI model or API key not configured.');
             }
@@ -252,7 +267,7 @@ class AskService {
             });
 
             const response = await streamingLLM.streamChat(messages);
-            const askWin = windowPool.get('ask');
+            const askWin = getWindowPool()?.get('ask');
 
             if (!askWin || askWin.isDestroyed()) {
                 console.error("[AskService] Ask window is not available to send stream to.");
@@ -351,11 +366,6 @@ class AskService {
         }
     }
 
-    handleStopScreenCapture() {
-        lastScreenshot = null;
-        console.log('[AskService] Stopped screen capture and cleared cache.');
-        return { success: true };
-    }
 }
 
 const askService = new AskService();

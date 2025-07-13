@@ -38,13 +38,10 @@ const isMacOS = window.api.platform.isMacOS;
 
 let mediaStream = null;
 let micMediaStream = null;
-let screenshotInterval = null;
 let audioContext = null;
 let audioProcessor = null;
 let systemAudioContext = null;
 let systemAudioProcessor = null;
-let currentImageQuality = 'medium';
-let lastScreenshotBase64 = null;
 
 let systemAudioBuffer = [];
 const MAX_SYSTEM_BUFFER_SIZE = 10;
@@ -139,10 +136,6 @@ function runAecSync(micF32, sysF32) {
         // console.log('🔊 No AEC module or heap buffer');
         return micF32;
     }
-
-    // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-    //                  새로운 프레임 단위 처리 로직
-    // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
 
     const frameSize = 160; // AEC 모듈 초기화 시 설정한 프레임 크기
     const numFrames = Math.floor(micF32.length / frameSize);
@@ -419,93 +412,9 @@ function setupSystemAudioProcessing(systemStream) {
 }
 
 // ---------------------------
-// Screenshot functions (exact from renderer.js)
-// ---------------------------
-async function captureScreenshot(imageQuality = 'medium', isManual = false) {
-    console.log(`Capturing ${isManual ? 'manual' : 'automated'} screenshot...`);
-
-    // Check rate limiting for automated screenshots only
-    if (!isManual && tokenTracker.shouldThrottle()) {
-        console.log('Automated screenshot skipped due to rate limiting');
-        return;
-    }
-
-    try {
-        // Request screenshot from main process
-        const result = await window.api.listenCapture.captureScreenshot({
-            quality: imageQuality,
-        });
-
-        if (result.success && result.base64) {
-            // Store the latest screenshot
-            lastScreenshotBase64 = result.base64;
-
-            // Note: sendResult is not defined in the original, this was likely an error
-            // Commenting out this section as it references undefined variable
-            /*
-            if (sendResult.success) {
-                // Track image tokens after successful send
-                const imageTokens = tokenTracker.calculateImageTokens(result.width || 1920, result.height || 1080);
-                tokenTracker.addTokens(imageTokens, 'image');
-                console.log(`📊 Image sent successfully - ${imageTokens} tokens used (${result.width}x${result.height})`);
-            } else {
-                console.error('Failed to send image:', sendResult.error);
-            }
-            */
-        } else {
-            console.error('Failed to capture screenshot:', result.error);
-        }
-    } catch (error) {
-        console.error('Error capturing screenshot:', error);
-    }
-}
-
-async function captureManualScreenshot(imageQuality = null) {
-    console.log('Manual screenshot triggered');
-    const quality = imageQuality || currentImageQuality;
-    await captureScreenshot(quality, true);
-}
-
-async function getCurrentScreenshot() {
-    try {
-        // First try to get a fresh screenshot from main process
-        const result = await window.api.listenCapture.getCurrentScreenshot();
-
-        if (result.success && result.base64) {
-            console.log('Got fresh screenshot from main process');
-            return result.base64;
-        }
-
-        // If no screenshot available, capture one now
-        console.log('No screenshot available, capturing new one');
-        const captureResult = await window.api.listenCapture.captureScreenshot({
-            quality: currentImageQuality,
-        });
-
-        if (captureResult.success && captureResult.base64) {
-            lastScreenshotBase64 = captureResult.base64;
-            return captureResult.base64;
-        }
-
-        // Fallback to last stored screenshot
-        if (lastScreenshotBase64) {
-            console.log('Using cached screenshot');
-            return lastScreenshotBase64;
-        }
-
-        throw new Error('Failed to get screenshot');
-    } catch (error) {
-        console.error('Error getting current screenshot:', error);
-        return null;
-    }
-}
-
-// ---------------------------
 // Main capture functions (exact from renderer.js)
 // ---------------------------
 async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'medium') {
-    // Store the image quality for manual screenshots
-    currentImageQuality = imageQuality;
 
     // Reset token tracker when starting new capture session
     tokenTracker.reset();
@@ -533,13 +442,6 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                     throw new Error('Failed to start macOS audio capture: ' + audioResult.error);
                 }
             }
-
-            // Initialize screen capture in main process
-            const screenResult = await window.api.listenCapture.startScreenCapture();
-            if (!screenResult.success) {
-                throw new Error('Failed to start screen capture: ' + screenResult.error);
-            }
-
 
             try {
                 micMediaStream = await navigator.mediaDevices.getUserMedia({
@@ -602,12 +504,6 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             // Windows - capture mic and system audio separately using native loopback
             console.log('Starting Windows capture with native loopback audio...');
 
-            // Start screen capture in main process for screenshots
-            const screenResult = await window.api.listenCapture.startScreenCapture();
-            if (!screenResult.success) {
-                throw new Error('Failed to start screen capture: ' + screenResult.error);
-            }
-
             // Ensure STT sessions are initialized before starting audio capture
             const sessionActive = await window.api.listenCapture.isSessionActive();
             if (!sessionActive) {
@@ -656,20 +552,6 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                 // Continue without system audio
             }
         }
-
-        // Start capturing screenshots - check if manual mode
-        if (screenshotIntervalSeconds === 'manual' || screenshotIntervalSeconds === 'Manual') {
-            console.log('Manual mode enabled - screenshots will be captured on demand only');
-            // Don't start automatic capture in manual mode
-        } else {
-            // 스크린샷 기능 활성화 (chatModel에서 사용)
-            const intervalMilliseconds = parseInt(screenshotIntervalSeconds) * 1000;
-            screenshotInterval = setInterval(() => captureScreenshot(imageQuality), intervalMilliseconds);
-
-            // Capture first screenshot immediately
-            setTimeout(() => captureScreenshot(imageQuality), 100);
-            console.log(`📸 Screenshot capture enabled with ${screenshotIntervalSeconds}s interval`);
-        }
     } catch (err) {
         console.error('Error starting capture:', err);
         // Note: pickleGlass.e() is not available in this context, commenting out
@@ -678,11 +560,6 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
 }
 
 function stopCapture() {
-    if (screenshotInterval) {
-        clearInterval(screenshotInterval);
-        screenshotInterval = null;
-    }
-
     // Clean up microphone resources
     if (audioProcessor) {
         audioProcessor.disconnect();
@@ -713,11 +590,6 @@ function stopCapture() {
         micMediaStream = null;
     }
 
-    // Stop screen capture in main process
-    window.api.listenCapture.stopScreenCapture().catch(err => {
-        console.error('Error stopping screen capture:', err);
-    });
-
     // Stop macOS audio capture if running
     if (isMacOS) {
         window.api.listenCapture.stopMacosSystemAudio().catch(err => {
@@ -735,19 +607,14 @@ module.exports = {
     disposeAec,      // 필요시 Rust 객체 파괴
     startCapture,
     stopCapture,
-    captureManualScreenshot,
-    getCurrentScreenshot,
     isLinux,
     isMacOS,
 };
 
 // Expose functions to global scope for external access (exact from renderer.js)
 if (typeof window !== 'undefined') {
-    window.captureManualScreenshot = captureManualScreenshot;
     window.listenCapture = module.exports;
     window.pickleGlass = window.pickleGlass || {};
     window.pickleGlass.startCapture = startCapture;
     window.pickleGlass.stopCapture = stopCapture;
-    window.pickleGlass.captureManualScreenshot = captureManualScreenshot;
-    window.pickleGlass.getCurrentScreenshot = getCurrentScreenshot;
 } 

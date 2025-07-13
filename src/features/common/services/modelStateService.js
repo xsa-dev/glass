@@ -359,6 +359,7 @@ class ModelStateService {
     }
 
     removeApiKey(provider) {
+        console.log(`[ModelStateService] Removing API key for provider: ${provider}`);
         if (provider in this.state.apiKeys) {
             this.state.apiKeys[provider] = null;
             const llmProvider = this.getProviderForModel('llm', this.state.selectedModels.llm);
@@ -542,6 +543,7 @@ class ModelStateService {
     }
 
     async handleRemoveApiKey(provider) {
+        console.log(`[ModelStateService] handleRemoveApiKey: ${provider}`);
         const success = this.removeApiKey(provider);
         if (success) {
             const selectedModels = this.getSelectedModels();

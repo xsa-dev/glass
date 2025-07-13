@@ -1,6 +1,7 @@
 const { BrowserWindow } = require('electron');
 const { spawn } = require('child_process');
 const { createSTT } = require('../../common/ai/factory');
+const modelStateService = require('../../common/services/modelStateService');
 // const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../window/windowManager');
 
 const COMPLETION_DEBOUNCE_MS = 2000;
@@ -131,8 +132,7 @@ class SttService {
     async initializeSttSessions(language = 'en') {
         const effectiveLanguage = process.env.OPENAI_TRANSCRIBE_LANG || language || 'en';
 
-        const { getCurrentModelInfo } = require('../../../window/windowManager');
-        const modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
+        const modelInfo = modelStateService.getCurrentModelInfo('stt');
         if (!modelInfo || !modelInfo.apiKey) {
             throw new Error('AI model or API key is not configured.');
         }
@@ -144,6 +144,7 @@ class SttService {
                 console.log('[SttService] Ignoring message - session already closed');
                 return;
             }
+            console.log('[SttService] handleMyMessage', message);
             
             if (this.modelInfo.provider === 'whisper') {
                 // Whisper STT emits 'transcription' events with different structure
@@ -411,8 +412,7 @@ class SttService {
         let modelInfo = this.modelInfo;
         if (!modelInfo) {
             console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
-            const { getCurrentModelInfo } = require('../../../window/windowManager');
-            modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
+            modelInfo = modelStateService.getCurrentModelInfo('stt');
         }
         if (!modelInfo) {
             throw new Error('STT model info could not be retrieved.');
@@ -433,8 +433,7 @@ class SttService {
         let modelInfo = this.modelInfo;
         if (!modelInfo) {
             console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
-            const { getCurrentModelInfo } = require('../../../window/windowManager');
-            modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
+            modelInfo = modelStateService.getCurrentModelInfo('stt');
         }
         if (!modelInfo) {
             throw new Error('STT model info could not be retrieved.');
@@ -515,8 +514,7 @@ class SttService {
         let modelInfo = this.modelInfo;
         if (!modelInfo) {
             console.warn('[SttService] modelInfo not found, fetching on-the-fly as a fallback...');
-            const { getCurrentModelInfo } = require('../../../window/windowManager');
-            modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
+            modelInfo = modelStateService.getCurrentModelInfo('stt');
         }
         if (!modelInfo) {
             throw new Error('STT model info could not be retrieved.');

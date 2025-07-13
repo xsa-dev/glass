@@ -374,6 +374,7 @@ async function removeApiKey() {
             }
         });
         
+        console.log('[SettingsService] API key removed for all providers');
         return { success: true };
     } catch (error) {
         console.error('[SettingsService] Error removing API key:', error);

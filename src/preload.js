@@ -276,12 +276,6 @@ contextBridge.exposeInMainWorld('api', {
     startMacosSystemAudio: () => ipcRenderer.invoke('listen:startMacosSystemAudio'),
     stopMacosSystemAudio: () => ipcRenderer.invoke('listen:stopMacosSystemAudio'),
     
-    // Screen Capture
-    captureScreenshot: (options) => ipcRenderer.invoke('capture-screenshot', options),
-    getCurrentScreenshot: () => ipcRenderer.invoke('get-current-screenshot'),
-    startScreenCapture: () => ipcRenderer.invoke('start-screen-capture'),
-    stopScreenCapture: () => ipcRenderer.invoke('stop-screen-capture'),
-    
     // Session Management
     isSessionActive: () => ipcRenderer.invoke('is-session-active'),
     

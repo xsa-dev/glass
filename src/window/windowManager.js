@@ -1,4 +1,4 @@
-const { BrowserWindow, globalShortcut, ipcMain, screen, app, shell, desktopCapturer } = require('electron');
+const { BrowserWindow, globalShortcut, screen, app, shell } = require('electron');
 const WindowLayoutManager = require('./windowLayoutManager');
 const SmoothMovementManager = require('./smoothMovementManager');
 const path = require('node:path');
@@ -570,10 +570,7 @@ function createWindows() {
 }
 
 function setupIpcHandlers(movementManager) {
-    setupApiKeyIPC();
-
     // quit-application handler moved to windowBridge.js to avoid duplication
-
     screen.on('display-added', (event, newDisplay) => {
         console.log('[Display] New display added:', newDisplay.id);
     });
@@ -591,387 +588,146 @@ function setupIpcHandlers(movementManager) {
         // console.log('[Display] Display metrics changed:', display.id, changedMetrics);
         updateLayout();
     });
-
-    // Content protection handlers moved to windowBridge.js to avoid duplication
-
-    ipcMain.on('header-state-changed', (event, state) => {
-        console.log(`[WindowManager] Header state changed to: ${state}`);
-        currentHeaderState = state;
-
-        if (state === 'main') {
-            createFeatureWindows(windowPool.get('header'));
-        } else {         // 'apikey' | 'permission'
-            destroyFeatureWindows();
-        }
-        internalBridge.emit('reregister-shortcuts');
-    });
-
-    // resize-header-window handler moved to windowBridge.js to avoid duplication
-
-    ipcMain.on('header-animation-finished', (event, state) => {
-        const header = windowPool.get('header');
-        if (!header || header.isDestroyed()) return;
-    
-        if (state === 'hidden') {
-            header.hide();
-            console.log('[WindowManager] Header hidden after animation.');
-        } else if (state === 'visible') {
-            console.log('[WindowManager] Header shown after animation.');
-            updateLayout();
-        }
-    });
-
-    ipcMain.handle('get-header-position', () => {
-        const header = windowPool.get('header');
-        if (header) {
-            const [x, y] = header.getPosition();
-            return { x, y };
-        }
-        return { x: 0, y: 0 };
-    });
-
-    ipcMain.handle('move-header', (event, newX, newY) => {
-        const header = windowPool.get('header');
-        if (header) {
-            const currentY = newY !== undefined ? newY : header.getBounds().y;
-            header.setPosition(newX, currentY, false);
-
-            updateLayout();
-        }
-    });
-
-    ipcMain.handle('move-header-to', (event, newX, newY) => {
-        const header = windowPool.get('header');
-        if (header) {
-            const targetDisplay = screen.getDisplayNearestPoint({ x: newX, y: newY });
-            const { x: workAreaX, y: workAreaY, width, height } = targetDisplay.workArea;
-            const headerBounds = header.getBounds();
-
-            // Only clamp if the new position would actually go out of bounds
-            // This prevents progressive restriction of movement
-            let clampedX = newX;
-            let clampedY = newY;
-            
-            // Check if we need to clamp X position
-            if (newX < workAreaX) {
-                clampedX = workAreaX;
-            } else if (newX + headerBounds.width > workAreaX + width) {
-                clampedX = workAreaX + width - headerBounds.width;
-            }
-            
-            // Check if we need to clamp Y position  
-            if (newY < workAreaY) {
-                clampedY = workAreaY;
-            } else if (newY + headerBounds.height > workAreaY + height) {
-                clampedY = workAreaY + height - headerBounds.height;
-            }
-
-            header.setPosition(clampedX, clampedY, false);
-
-            updateLayout();
-        }
-    });
-
-
-    // move-window-step handler moved to windowBridge.js to avoid duplication
-
-    ipcMain.handle('adjust-window-height', (event, targetHeight) => {
-        const senderWindow = BrowserWindow.fromWebContents(event.sender);
-        if (senderWindow) {
-            const wasResizable = senderWindow.isResizable();
-            if (!wasResizable) {
-                senderWindow.setResizable(true);
-            }
-
-            const currentBounds = senderWindow.getBounds();
-            const minHeight = senderWindow.getMinimumSize()[1];
-            const maxHeight = senderWindow.getMaximumSize()[1];
-            
-            let adjustedHeight;
-            if (maxHeight === 0) {
-                adjustedHeight = Math.max(minHeight, targetHeight);
-            } else {
-                adjustedHeight = Math.max(minHeight, Math.min(maxHeight, targetHeight));
-            }
-            
-            senderWindow.setSize(currentBounds.width, adjustedHeight, false);
-
-            if (!wasResizable) {
-                senderWindow.setResizable(false);
-            }
-
-            updateLayout();
-        }
-    });
-
-    ipcMain.handle('check-system-permissions', async () => {
-        const { systemPreferences } = require('electron');
-        const permissions = {
-            microphone: 'unknown',
-            screen: 'unknown',
-            needsSetup: true
-        };
-
-        try {
-            if (process.platform === 'darwin') {
-                // Check microphone permission on macOS
-                const micStatus = systemPreferences.getMediaAccessStatus('microphone');
-                console.log('[Permissions] Microphone status:', micStatus);
-                permissions.microphone = micStatus;
-
-                // Check screen recording permission using the system API
-                const screenStatus = systemPreferences.getMediaAccessStatus('screen');
-                console.log('[Permissions] Screen status:', screenStatus);
-                permissions.screen = screenStatus;
-
-                permissions.needsSetup = micStatus !== 'granted' || screenStatus !== 'granted';
-            } else {
-                permissions.microphone = 'granted';
-                permissions.screen = 'granted';
-                permissions.needsSetup = false;
-            }
-
-            console.log('[Permissions] System permissions status:', permissions);
-            return permissions;
-        } catch (error) {
-            console.error('[Permissions] Error checking permissions:', error);
-            return {
-                microphone: 'unknown',
-                screen: 'unknown',
-                needsSetup: true,
-                error: error.message
-            };
-        }
-    });
-
-    ipcMain.handle('request-microphone-permission', async () => {
-        if (process.platform !== 'darwin') {
-            return { success: true };
-        }
-
-        const { systemPreferences } = require('electron');
-        try {
-            const status = systemPreferences.getMediaAccessStatus('microphone');
-            console.log('[Permissions] Microphone status:', status);
-            if (status === 'granted') {
-                return { success: true, status: 'granted' };
-            }
-
-            // Req mic permission
-            const granted = await systemPreferences.askForMediaAccess('microphone');
-            return { 
-                success: granted, 
-                status: granted ? 'granted' : 'denied'
-            };
-        } catch (error) {
-            console.error('[Permissions] Error requesting microphone permission:', error);
-            return { 
-                success: false, 
-                error: error.message 
-            };
-        }
-    });
-
-    ipcMain.handle('open-system-preferences', async (event, section) => {
-        if (process.platform !== 'darwin') {
-            return { success: false, error: 'Not supported on this platform' };
-        }
-
-        try {
-            if (section === 'screen-recording') {
-                // First trigger screen capture request to register the app in system preferences
-                try {
-                    console.log('[Permissions] Triggering screen capture request to register app...');
-                    await desktopCapturer.getSources({ 
-                        types: ['screen'], 
-                        thumbnailSize: { width: 1, height: 1 } 
-                    });
-                    console.log('[Permissions] App registered for screen recording');
-                } catch (captureError) {
-                    console.log('[Permissions] Screen capture request triggered (expected to fail):', captureError.message);
-                }
-                
-                // Then open system preferences
-                // await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
-            }
-            // if (section === 'microphone') {
-            //     await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
-            // }
-            return { success: true };
-        } catch (error) {
-            console.error('[Permissions] Error opening system preferences:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('mark-permissions-completed', async () => {
-        try {
-            // This is a system-level setting, not user-specific.
-            await permissionRepository.markPermissionsAsCompleted();
-            console.log('[Permissions] Marked permissions as completed');
-            return { success: true };
-        } catch (error) {
-            console.error('[Permissions] Error marking permissions as completed:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('check-permissions-completed', async () => {
-        try {
-            const completed = await permissionRepository.checkPermissionsCompleted();
-            console.log('[Permissions] Permissions completed status:', completed);
-            return completed;
-        } catch (error) {
-            console.error('[Permissions] Error checking permissions completed status:', error);
-            return false;
-        }
-    });
-    
-    ipcMain.handle('toggle-all-windows-visibility', () => toggleAllWindowsVisibility());
-
-    // ipcMain.handle('toggle-feature', async (event, featureName) => {
-    //     return toggleFeature(featureName);
-    // });
-
-    ipcMain.on('animation-finished', (event) => {
-        const win = BrowserWindow.fromWebContents(event.sender);
-        if (win && !win.isDestroyed()) {
-            console.log(`[WindowManager] Hiding window after animation.`);
-            win.hide();
-        }
-    });
-
-
-    ipcMain.handle('ask:closeAskWindow', async () => {
-        const askWindow = windowPool.get('ask');
-        if (askWindow) {
-            askWindow.webContents.send('window-hide-animation');
-        }
-    });
 }
 
+const handleHeaderStateChanged = (state) => {
+    console.log(`[WindowManager] Header state changed to: ${state}`);
+    currentHeaderState = state;
 
-// /**
-//  * 
-//  * @param {'listen'|'ask'|'settings'} featureName
-//  * @param {{
-// *   listen?:   { targetVisibility?: 'show'|'hide' },
-// *   ask?:      { targetVisibility?: 'show'|'hide', questionText?: string },
-// *   settings?: { targetVisibility?: 'show'|'hide' }
-// * }} [options={}]
-// */
-// async function toggleFeature(featureName, options = {}) {
-//     if (!windowPool.get(featureName) && currentHeaderState === 'main') {
-//         createFeatureWindows(windowPool.get('header'));
-//     }
-
-//     if (featureName === 'ask') {
-//         let askWindow = windowPool.get('ask');
-
-//         if (!askWindow || askWindow.isDestroyed()) {
-//             console.log('[WindowManager] Ask window not found, creating new one');
-//             return;
-//         }
-
-//         const questionText = options?.ask?.questionText ?? null;
-//         const targetVisibility = options?.ask?.targetVisibility ?? null;
-//         if (askWindow.isVisible()) {
-//             if (questionText) {
-//                 askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
-//             } else {
-//                 updateLayout();
-//                 if (targetVisibility === 'show') {
-//                     askWindow.webContents.send('ask:showTextInput');
-//                 } else {
-//                     askWindow.webContents.send('window-hide-animation');
-//                 }
-//             }
-//         } else {
-//             console.log('[WindowManager] Showing hidden Ask window');
-//             askWindow.show();
-//             updateLayout();
-//             if (questionText) {
-//                 askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
-//             }
-//             askWindow.webContents.send('window-show-animation');
-//         }
-//     }
-// }
-
-async function toggleFeature(featureName, options = {}) {
-    if (!windowPool.get(featureName) && currentHeaderState === 'main') {
+    if (state === 'main') {
         createFeatureWindows(windowPool.get('header'));
+    } else {         // 'apikey' | 'permission'
+        destroyFeatureWindows();
     }
+    internalBridge.emit('reregister-shortcuts');
+};
 
-    if (featureName === 'ask') {
-        let askWindow = windowPool.get('ask');
+const handleHeaderAnimationFinished = (state) => {
+    const header = windowPool.get('header');
+    if (!header || header.isDestroyed()) return;
 
-        if (!askWindow || askWindow.isDestroyed()) {
-            console.log('[WindowManager] Ask window not found, creating new one');
-            return;
+    if (state === 'hidden') {
+        header.hide();
+        console.log('[WindowManager] Header hidden after animation.');
+    } else if (state === 'visible') {
+        console.log('[WindowManager] Header shown after animation.');
+        updateLayout();
+    }
+};
+
+const getHeaderPosition = () => {
+    const header = windowPool.get('header');
+    if (header) {
+        const [x, y] = header.getPosition();
+        return { x, y };
+    }
+    return { x: 0, y: 0 };
+};
+
+const moveHeader = (newX, newY) => {
+    const header = windowPool.get('header');
+    if (header) {
+        const currentY = newY !== undefined ? newY : header.getBounds().y;
+        header.setPosition(newX, currentY, false);
+        updateLayout();
+    }
+};
+
+const moveHeaderTo = (newX, newY) => {
+    const header = windowPool.get('header');
+    if (header) {
+        const targetDisplay = screen.getDisplayNearestPoint({ x: newX, y: newY });
+        const { x: workAreaX, y: workAreaY, width, height } = targetDisplay.workArea;
+        const headerBounds = header.getBounds();
+
+        let clampedX = newX;
+        let clampedY = newY;
+        
+        if (newX < workAreaX) {
+            clampedX = workAreaX;
+        } else if (newX + headerBounds.width > workAreaX + width) {
+            clampedX = workAreaX + width - headerBounds.width;
         }
-        if (askWindow.isVisible()) {
-            askWindow.webContents.send('ask:showTextInput');
+        
+        if (newY < workAreaY) {
+            clampedY = workAreaY;
+        } else if (newY + headerBounds.height > workAreaY + height) {
+            clampedY = workAreaY + height - headerBounds.height;
+        }
+
+        header.setPosition(clampedX, clampedY, false);
+        updateLayout();
+    }
+};
+
+const adjustWindowHeight = (sender, targetHeight) => {
+    const senderWindow = BrowserWindow.fromWebContents(sender);
+    if (senderWindow) {
+        const wasResizable = senderWindow.isResizable();
+        if (!wasResizable) {
+            senderWindow.setResizable(true);
+        }
+
+        const currentBounds = senderWindow.getBounds();
+        const minHeight = senderWindow.getMinimumSize()[1];
+        const maxHeight = senderWindow.getMaximumSize()[1];
+        
+        let adjustedHeight;
+        if (maxHeight === 0) {
+            adjustedHeight = Math.max(minHeight, targetHeight);
         } else {
-            console.log('[WindowManager] Showing hidden Ask window');
-            askWindow.show();
-            updateLayout();
-            askWindow.webContents.send('window-show-animation');
+            adjustedHeight = Math.max(minHeight, Math.min(maxHeight, targetHeight));
         }
+        
+        senderWindow.setSize(currentBounds.width, adjustedHeight, false);
+
+        if (!wasResizable) {
+            senderWindow.setResizable(false);
+        }
+
+        updateLayout();
+    }
+};
+
+const handleAnimationFinished = (sender) => {
+    const win = BrowserWindow.fromWebContents(sender);
+    if (win && !win.isDestroyed()) {
+        console.log(`[WindowManager] Hiding window after animation.`);
+        win.hide();
+    }
+};
+
+const closeAskWindow = () => {
+    const askWindow = windowPool.get('ask');
+    if (askWindow) {
+        askWindow.webContents.send('window-hide-animation');
+    }
+};
+
+async function ensureAskWindowVisible() {
+    if (currentHeaderState !== 'main') {
+        console.log('[WindowManager] Not in main state, skipping ensureAskWindowVisible');
+        return;
+    }
+
+    let askWindow = windowPool.get('ask');
+
+    if (!askWindow || askWindow.isDestroyed()) {
+        console.log('[WindowManager] Ask window not found, creating new one');
+        createFeatureWindows(windowPool.get('header'), 'ask');
+        askWindow = windowPool.get('ask');
+    }
+
+    if (!askWindow.isVisible()) {
+        console.log('[WindowManager] Showing hidden Ask window');
+        askWindow.show();
+        updateLayout();
+        askWindow.webContents.send('window-show-animation');
     }
 }
-
 
 
 //////// after_modelStateService ////////
-async function getStoredApiKey() {
-    if (global.modelStateService) {
-        const provider = await getStoredProvider();
-        return global.modelStateService.getApiKey(provider);
-    }
-    return null; // Fallback
-}
-
-async function getStoredProvider() {
-    if (global.modelStateService) {
-        return global.modelStateService.getCurrentProvider('llm');
-    }
-    return 'openai'; // Fallback
-}
-
-/**
- * 
- * @param {IpcMainInvokeEvent} event 
- * @param {{type: 'llm' | 'stt'}}
- */
-async function getCurrentModelInfo(event, { type }) {
-    if (global.modelStateService && (type === 'llm' || type === 'stt')) {
-        return global.modelStateService.getCurrentModelInfo(type);
-    }
-    return null;
-}
-
-function setupApiKeyIPC() {
-    const { ipcMain } = require('electron');
-
-    ipcMain.handle('get-stored-api-key', getStoredApiKey);
-    ipcMain.handle('get-ai-provider', getStoredProvider);
-    ipcMain.handle('get-current-model-info', getCurrentModelInfo);
-
-    ipcMain.handle('api-key-validated', async (event, data) => {
-        console.warn("[DEPRECATED] 'api-key-validated' IPC was called. This logic is now handled by 'model:validate-key'.");
-        return { success: true };
-    });
-
-    ipcMain.handle('remove-api-key', async () => {
-         console.warn("[DEPRECATED] 'remove-api-key' IPC was called. This is now handled by 'model:remove-api-key'.");
-        return { success: true };
-    });
-    
-    console.log('[WindowManager] API key related IPC handlers have been updated for ModelStateService.');
-}
-//////// after_modelStateService ////////
-
 
 const closeWindow = (windowName) => {
     const win = windowPool.get(windowName);
@@ -985,10 +741,6 @@ module.exports = {
     createWindows,
     windowPool,
     fixedYPosition,
-    getStoredApiKey,
-    getStoredProvider,
-    getCurrentModelInfo,
-    toggleFeature, // Export toggleFeature so shortcutsService can use it
     toggleContentProtection,
     resizeHeaderWindow,
     getContentProtectionStatus,
@@ -999,4 +751,14 @@ module.exports = {
     openLoginPage,
     moveWindowStep,
     closeWindow,
+    toggleAllWindowsVisibility,
+    handleHeaderStateChanged,
+    handleHeaderAnimationFinished,
+    getHeaderPosition,
+    moveHeader,
+    moveHeaderTo,
+    adjustWindowHeight,
+    handleAnimationFinished,
+    closeAskWindow,
+    ensureAskWindowVisible,
 };

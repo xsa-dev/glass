@@ -3,6 +3,7 @@ const { getSystemPrompt } = require('../../common/prompts/promptBuilder.js');
 const { createLLM } = require('../../common/ai/factory');
 const sessionRepository = require('../../common/repositories/session');
 const summaryRepository = require('./repositories');
+const modelStateService = require('../../common/services/modelStateService');
 // const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../window/windowManager.js');
 
 class SummaryService {
@@ -97,8 +98,7 @@ Please build upon this context while analyzing the new conversation segments.
                 await sessionRepository.touch(this.currentSessionId);
             }
 
-            const { getCurrentModelInfo } = require('../../../window/windowManager');
-            const modelInfo = await getCurrentModelInfo(null, { type: 'llm' });
+            const modelInfo = modelStateService.getCurrentModelInfo('llm');
             if (!modelInfo || !modelInfo.apiKey) {
                 throw new Error('AI model or API key is not configured.');
             }

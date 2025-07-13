@@ -1,6 +1,7 @@
 const { globalShortcut, screen } = require('electron');
 const shortcutsRepository = require('./repositories');
 const internalBridge = require('../../bridge/internalBridge');
+const askService = require('../ask/askService');
 
 
 class ShortcutsService {
@@ -210,8 +211,7 @@ class ShortcutsService {
                     callback = () => this.toggleAllWindowsVisibility(this.windowPool);
                     break;
                 case 'nextStep':
-                    // Late require to prevent circular dependency
-                    callback = () => require('../../window/windowManager').toggleFeature('ask', {ask: { targetVisibility: 'show' }});
+                    callback = () => askService.toggleAskButton();
                     break;
                 case 'scrollUp':
                     callback = () => {

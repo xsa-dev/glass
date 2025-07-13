@@ -9,6 +9,7 @@ const shortcutsService = require('../features/shortcuts/shortcutsService');
 
 const askService = require('../features/ask/askService');
 const listenService = require('../features/listen/listenService');
+const permissionService = require('../features/common/services/permissionService');
 
 module.exports = {
   // Renderer로부터의 요청을 수신
@@ -32,6 +33,14 @@ module.exports = {
     ipcMain.handle('get-default-shortcuts', async () => await shortcutsService.handleRestoreDefaults());
     ipcMain.handle('save-shortcuts', async (event, newKeybinds) => await shortcutsService.handleSaveShortcuts(newKeybinds));
 
+
+    // Permissions
+    ipcMain.handle('check-system-permissions', async () => await permissionService.checkSystemPermissions());
+    ipcMain.handle('request-microphone-permission', async () => await permissionService.requestMicrophonePermission());
+    ipcMain.handle('open-system-preferences', async (event, section) => await permissionService.openSystemPreferences(section));
+    ipcMain.handle('mark-permissions-completed', async () => await permissionService.markPermissionsAsCompleted());
+    ipcMain.handle('check-permissions-completed', async () => await permissionService.checkPermissionsCompleted());
+    
 
     // User/Auth
     ipcMain.handle('get-current-user', () => authService.getCurrentUser());
@@ -67,7 +76,6 @@ module.exports = {
     ipcMain.handle('ask:sendQuestionFromAsk', async (event, userPrompt) => await askService.sendMessage(userPrompt));
     ipcMain.handle('ask:sendQuestionFromSummary', async (event, userPrompt) => await askService.sendMessage(userPrompt));
     ipcMain.handle('ask:toggleAskButton', async () => await askService.toggleAskButton());
-    ipcMain.handle('stop-screen-capture', async () => askService.handleStopScreenCapture());
 
     // Listen
     ipcMain.handle('listen:sendMicAudio', async (event, { data, mimeType }) => await listenService.handleSendMicAudioContent(data, mimeType));
@@ -98,12 +106,11 @@ module.exports = {
     ipcMain.handle('model:validate-key', async (e, { provider, key }) => await modelStateService.handleValidateKey(provider, key));
     ipcMain.handle('model:get-all-keys', () => modelStateService.getAllApiKeys());
     ipcMain.handle('model:set-api-key', async (e, { provider, key }) => await modelStateService.setApiKey(provider, key));
-    ipcMain.handle('model:remove-api-key', async (e, { provider }) => await modelStateService.handleRemoveApiKey(provider));
+    ipcMain.handle('model:remove-api-key', async (e, provider) => await modelStateService.handleRemoveApiKey(provider));
     ipcMain.handle('model:get-selected-models', () => modelStateService.getSelectedModels());
     ipcMain.handle('model:set-selected-model', async (e, { type, modelId }) => await modelStateService.handleSetSelectedModel(type, modelId));
     ipcMain.handle('model:get-available-models', (e, { type }) => modelStateService.getAvailableModels(type));
     ipcMain.handle('model:are-providers-configured', () => modelStateService.areProvidersConfigured());
-    ipcMain.handle('model:get-current-model-info', (e, { type }) => modelStateService.getCurrentModelInfo(type));
     ipcMain.handle('model:get-provider-config', () => modelStateService.getProviderConfig());
 
 

@@ -693,6 +693,7 @@ export class SettingsView extends LitElement {
     }
     
     async handleClearKey(provider) {
+        console.log(`[SettingsView] handleClearKey: ${provider}`);
         this.saving = true;
         await window.api.settingsView.removeApiKey(provider);
         this.apiKeys = { ...this.apiKeys, [provider]: '' };
@@ -1095,13 +1096,6 @@ export class SettingsView extends LitElement {
         } catch(e) {
             console.error('Error invoking save-api-key IPC:', e);
         }
-    }
-
-    async handleClearApiKey() {
-        console.log('Clear API Key clicked');
-        await window.api.settingsView.removeApiKey();
-        this.apiKey = null;
-        this.requestUpdate();
     }
 
     handleQuit() {
