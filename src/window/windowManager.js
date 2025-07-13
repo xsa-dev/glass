@@ -819,9 +819,9 @@ function setupIpcHandlers(movementManager) {
     
     ipcMain.handle('toggle-all-windows-visibility', () => toggleAllWindowsVisibility());
 
-    ipcMain.handle('toggle-feature', async (event, featureName) => {
-        return toggleFeature(featureName);
-    });
+    // ipcMain.handle('toggle-feature', async (event, featureName) => {
+    //     return toggleFeature(featureName);
+    // });
 
     ipcMain.on('animation-finished', (event) => {
         const win = BrowserWindow.fromWebContents(event.sender);
@@ -838,27 +838,56 @@ function setupIpcHandlers(movementManager) {
             askWindow.webContents.send('window-hide-animation');
         }
     });
-
-
-    // ipcMain.handle('ask:sendQuestionToMain', (event, question) => {
-    //     console.log('📨 Main process: Sending question to AskView', question);
-    //     toggleFeature('ask', {ask: { questionText: question }});
-    //     return { success: true };
-    // });
-
-
 }
 
 
-/**
- * 
- * @param {'listen'|'ask'|'settings'} featureName
- * @param {{
-*   listen?:   { targetVisibility?: 'show'|'hide' },
-*   ask?:      { targetVisibility?: 'show'|'hide', questionText?: string },
-*   settings?: { targetVisibility?: 'show'|'hide' }
-* }} [options={}]
-*/
+// /**
+//  * 
+//  * @param {'listen'|'ask'|'settings'} featureName
+//  * @param {{
+// *   listen?:   { targetVisibility?: 'show'|'hide' },
+// *   ask?:      { targetVisibility?: 'show'|'hide', questionText?: string },
+// *   settings?: { targetVisibility?: 'show'|'hide' }
+// * }} [options={}]
+// */
+// async function toggleFeature(featureName, options = {}) {
+//     if (!windowPool.get(featureName) && currentHeaderState === 'main') {
+//         createFeatureWindows(windowPool.get('header'));
+//     }
+
+//     if (featureName === 'ask') {
+//         let askWindow = windowPool.get('ask');
+
+//         if (!askWindow || askWindow.isDestroyed()) {
+//             console.log('[WindowManager] Ask window not found, creating new one');
+//             return;
+//         }
+
+//         const questionText = options?.ask?.questionText ?? null;
+//         const targetVisibility = options?.ask?.targetVisibility ?? null;
+//         if (askWindow.isVisible()) {
+//             if (questionText) {
+//                 askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
+//             } else {
+//                 updateLayout();
+//                 if (targetVisibility === 'show') {
+//                     askWindow.webContents.send('ask:showTextInput');
+//                 } else {
+//                     askWindow.webContents.send('window-hide-animation');
+//                 }
+//             }
+//         } else {
+//             console.log('[WindowManager] Showing hidden Ask window');
+//             askWindow.show();
+//             updateLayout();
+//             if (questionText) {
+//                 askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
+//             }
+//             askWindow.webContents.send('window-show-animation');
+//         }
+//     }
+// }
+
 async function toggleFeature(featureName, options = {}) {
     if (!windowPool.get(featureName) && currentHeaderState === 'main') {
         createFeatureWindows(windowPool.get('header'));
@@ -871,59 +900,13 @@ async function toggleFeature(featureName, options = {}) {
             console.log('[WindowManager] Ask window not found, creating new one');
             return;
         }
-
-        const questionText = options?.ask?.questionText ?? null;
-        const targetVisibility = options?.ask?.targetVisibility ?? null;
         if (askWindow.isVisible()) {
-            if (questionText) {
-                askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
-            } else {
-                updateLayout();
-                if (targetVisibility === 'show') {
-                    askWindow.webContents.send('ask:showTextInput');
-                } else {
-                    askWindow.webContents.send('window-hide-animation');
-                }
-            }
+            askWindow.webContents.send('ask:showTextInput');
         } else {
             console.log('[WindowManager] Showing hidden Ask window');
             askWindow.show();
             updateLayout();
-            if (questionText) {
-                askWindow.webContents.send('ask:sendQuestionToRenderer', questionText);
-            }
             askWindow.webContents.send('window-show-animation');
-        }
-    }
-
-    if (featureName === 'settings') {
-        const settingsWindow = windowPool.get(featureName);
-
-        if (settingsWindow) {
-            if (settingsWindow.isDestroyed()) {
-                console.error(`Window ${featureName} is destroyed, cannot toggle`);
-                return;
-            }
-
-            if (settingsWindow.isVisible()) {
-                if (featureName === 'settings') {
-                    settingsWindow.webContents.send('settings-window-hide-animation');
-                } else {
-                    settingsWindow.webContents.send('window-hide-animation');
-                }
-            } else {
-                try {
-                    settingsWindow.show();
-                    updateLayout();
-
-                    settingsWindow.webContents.send('window-show-animation');
-                } catch (e) {
-                    console.error('Error showing window:', e);
-                }
-            }
-        } else {
-            console.error(`Window not found for feature: ${featureName}`);
-            console.error('Available windows:', Array.from(windowPool.keys()));
         }
     }
 }

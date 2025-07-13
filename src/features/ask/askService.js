@@ -231,9 +231,6 @@ class AskService {
                 console.log(`[AskService] Stream reading was intentionally cancelled. Reason: ${signal.reason}`);
             } else {
                 console.error('[AskService] Error while processing stream:', streamError);
-                if (askWin && !askWin.isDestroyed()) {
-                    askWin.webContents.send('ask-response-stream-error', { error: streamError.message });
-                }
             }
         } finally {
             this.state.isStreaming = false;
