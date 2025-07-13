@@ -2,23 +2,9 @@ const { BrowserWindow, globalShortcut, ipcMain, screen, app, shell, desktopCaptu
 const WindowLayoutManager = require('./windowLayoutManager');
 const SmoothMovementManager = require('./smoothMovementManager');
 const path = require('node:path');
-const fs = require('node:fs');
 const os = require('os');
-const util = require('util');
-const execFile = util.promisify(require('child_process').execFile);
 const shortcutsService = require('../features/shortcuts/shortcutsService');
 const internalBridge = require('../bridge/internalBridge');
-
-// Try to load sharp, but don't fail if it's not available
-let sharp;
-try {
-    sharp = require('sharp');
-    console.log('[WindowManager] Sharp module loaded successfully');
-} catch (error) {
-    console.warn('[WindowManager] Sharp module not available:', error.message);
-    console.warn('[WindowManager] Screenshot functionality will work with reduced image processing capabilities');
-    sharp = null;
-}
 const permissionRepository = require('../features/common/repositories/permission');
 
 /* ────────────────[ GLASS BYPASS ]─────────────── */
@@ -53,7 +39,6 @@ const DEFAULT_WINDOW_WIDTH = 353;
 let currentHeaderState = 'apikey';
 const windowPool = new Map();
 let fixedYPosition = 0;
-let lastScreenshot = null;
 
 let settingsHideTimer = null;
 
@@ -719,59 +704,6 @@ function setupIpcHandlers(movementManager) {
         }
     });
 
-    ipcMain.handle('start-screen-capture', async () => {
-        try {
-            isCapturing = true;
-            console.log('Starting screen capture in main process');
-            return { success: true };
-        } catch (error) {
-            console.error('Failed to start screen capture:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('stop-screen-capture', async () => {
-        try {
-            isCapturing = false;
-            lastScreenshot = null;
-            console.log('Stopped screen capture in main process');
-            return { success: true };
-        } catch (error) {
-            console.error('Failed to stop screen capture:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('capture-screenshot', async (event, options = {}) => {
-        return captureScreenshot(options);
-    });
-
-    ipcMain.handle('get-current-screenshot', async event => {
-        try {
-            if (lastScreenshot && Date.now() - lastScreenshot.timestamp < 1000) {
-                console.log('Returning cached screenshot');
-                return {
-                    success: true,
-                    base64: lastScreenshot.base64,
-                    width: lastScreenshot.width,
-                    height: lastScreenshot.height,
-                };
-            }
-            return {
-                success: false,
-                error: 'No screenshot available',
-            };
-        } catch (error) {
-            console.error('Failed to get current screenshot:', error);
-            return {
-                success: false,
-                error: error.message,
-            };
-        }
-    });
-
-    // firebase-logout handler moved to windowBridge.js to avoid duplication
-
     ipcMain.handle('check-system-permissions', async () => {
         const { systemPreferences } = require('electron');
         const permissions = {
@@ -1041,91 +973,6 @@ function setupApiKeyIPC() {
 //////// after_modelStateService ////////
 
 
-async function captureScreenshot(options = {}) {
-    if (process.platform === 'darwin') {
-        try {
-            const tempPath = path.join(os.tmpdir(), `screenshot-${Date.now()}.jpg`);
-
-            await execFile('screencapture', ['-x', '-t', 'jpg', tempPath]);
-
-            const imageBuffer = await fs.promises.readFile(tempPath);
-            await fs.promises.unlink(tempPath);
-
-            if (sharp) {
-                try {
-                    // Try using sharp for optimal image processing
-                    const resizedBuffer = await sharp(imageBuffer)
-                        // .resize({ height: 1080 })
-                        .resize({ height: 384 })
-                        .jpeg({ quality: 80 })
-                        .toBuffer();
-
-                    const base64 = resizedBuffer.toString('base64');
-                    const metadata = await sharp(resizedBuffer).metadata();
-
-                    lastScreenshot = {
-                        base64,
-                        width: metadata.width,
-                        height: metadata.height,
-                        timestamp: Date.now(),
-                    };
-
-                    return { success: true, base64, width: metadata.width, height: metadata.height };
-                } catch (sharpError) {
-                    console.warn('Sharp module failed, falling back to basic image processing:', sharpError.message);
-                }
-            }
-            
-            // Fallback: Return the original image without resizing
-            console.log('[WindowManager] Using fallback image processing (no resize/compression)');
-            const base64 = imageBuffer.toString('base64');
-            
-            lastScreenshot = {
-                base64,
-                width: null, // We don't have metadata without sharp
-                height: null,
-                timestamp: Date.now(),
-            };
-
-            return { success: true, base64, width: null, height: null };
-        } catch (error) {
-            console.error('Failed to capture screenshot:', error);
-            return { success: false, error: error.message };
-        }
-    }
-
-    try {
-        const sources = await desktopCapturer.getSources({
-            types: ['screen'],
-            thumbnailSize: {
-                width: 1920,
-                height: 1080,
-            },
-        });
-
-        if (sources.length === 0) {
-            throw new Error('No screen sources available');
-        }
-        const source = sources[0];
-        const buffer = source.thumbnail.toJPEG(70);
-        const base64 = buffer.toString('base64');
-        const size = source.thumbnail.getSize();
-
-        return {
-            success: true,
-            base64,
-            width: size.width,
-            height: size.height,
-        };
-    } catch (error) {
-        console.error('Failed to capture screenshot using desktopCapturer:', error);
-        return {
-            success: false,
-            error: error.message,
-        };
-    }
-}
-
 const closeWindow = (windowName) => {
     const win = windowPool.get(windowName);
     if (win && !win.isDestroyed()) {
@@ -1141,7 +988,6 @@ module.exports = {
     getStoredApiKey,
     getStoredProvider,
     getCurrentModelInfo,
-    captureScreenshot,
     toggleFeature, // Export toggleFeature so shortcutsService can use it
     toggleContentProtection,
     resizeHeaderWindow,

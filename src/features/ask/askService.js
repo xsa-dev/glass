@@ -1,10 +1,111 @@
 const { BrowserWindow } = require('electron');
 const { createStreamingLLM } = require('../common/ai/factory');
-const { getCurrentModelInfo, windowPool, captureScreenshot } = require('../../window/windowManager');
+const { getCurrentModelInfo, windowPool, updateLayout } = require('../../window/windowManager');
 const sessionRepository = require('../common/repositories/session');
 const askRepository = require('./repositories');
 const { getSystemPrompt } = require('../common/prompts/promptBuilder');
-const listenService = require('../listen/listenService');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('os');
+const util = require('util');
+const execFile = util.promisify(require('child_process').execFile);
+const { desktopCapturer } = require('electron');
+
+// Try to load sharp, but don't fail if it's not available
+let sharp;
+try {
+    sharp = require('sharp');
+    console.log('[AskService] Sharp module loaded successfully');
+} catch (error) {
+    console.warn('[AskService] Sharp module not available:', error.message);
+    console.warn('[AskService] Screenshot functionality will work with reduced image processing capabilities');
+    sharp = null;
+}
+let lastScreenshot = null;
+
+async function captureScreenshot(options = {}) {
+    if (process.platform === 'darwin') {
+        try {
+            const tempPath = path.join(os.tmpdir(), `screenshot-${Date.now()}.jpg`);
+
+            await execFile('screencapture', ['-x', '-t', 'jpg', tempPath]);
+
+            const imageBuffer = await fs.promises.readFile(tempPath);
+            await fs.promises.unlink(tempPath);
+
+            if (sharp) {
+                try {
+                    // Try using sharp for optimal image processing
+                    const resizedBuffer = await sharp(imageBuffer)
+                        .resize({ height: 384 })
+                        .jpeg({ quality: 80 })
+                        .toBuffer();
+
+                    const base64 = resizedBuffer.toString('base64');
+                    const metadata = await sharp(resizedBuffer).metadata();
+
+                    lastScreenshot = {
+                        base64,
+                        width: metadata.width,
+                        height: metadata.height,
+                        timestamp: Date.now(),
+                    };
+
+                    return { success: true, base64, width: metadata.width, height: metadata.height };
+                } catch (sharpError) {
+                    console.warn('Sharp module failed, falling back to basic image processing:', sharpError.message);
+                }
+            }
+            
+            // Fallback: Return the original image without resizing
+            console.log('[AskService] Using fallback image processing (no resize/compression)');
+            const base64 = imageBuffer.toString('base64');
+            
+            lastScreenshot = {
+                base64,
+                width: null, // We don't have metadata without sharp
+                height: null,
+                timestamp: Date.now(),
+            };
+
+            return { success: true, base64, width: null, height: null };
+        } catch (error) {
+            console.error('Failed to capture screenshot:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    try {
+        const sources = await desktopCapturer.getSources({
+            types: ['screen'],
+            thumbnailSize: {
+                width: 1920,
+                height: 1080,
+            },
+        });
+
+        if (sources.length === 0) {
+            throw new Error('No screen sources available');
+        }
+        const source = sources[0];
+        const buffer = source.thumbnail.toJPEG(70);
+        const base64 = buffer.toString('base64');
+        const size = source.thumbnail.getSize();
+
+        return {
+            success: true,
+            base64,
+            width: size.width,
+            height: size.height,
+        };
+    } catch (error) {
+        console.error('Failed to capture screenshot using desktopCapturer:', error);
+        return {
+            success: false,
+            error: error.message,
+        };
+    }
+}
 
 /**
  * @class
@@ -32,15 +133,17 @@ class AskService {
     }
 
     async toggleAskButton() {
-        const { windowPool, updateLayout } = require('../../window/windowManager');
         const askWindow = windowPool.get('ask');
 
+        // 답변이 있거나 스트리밍 중일 때
         const hasContent = this.state.isStreaming || (this.state.currentResponse && this.state.currentResponse.length > 0);
 
         if (askWindow.isVisible() && hasContent) {
+            // 창을 닫는 대신, 텍스트 입력창만 토글합니다.
             this.state.showTextInput = !this.state.showTextInput;
-            this._broadcastState();
+            this._broadcastState(); // 변경된 상태 전파
         } else {
+            // 기존의 창 보이기/숨기기 로직
             if (askWindow.isVisible()) {
                 askWindow.webContents.send('window-hide-animation');
                 this.state.isVisible = false;
@@ -51,6 +154,7 @@ class AskService {
                 updateLayout();
                 askWindow.webContents.send('window-show-animation');
             }
+            // 창이 다시 열릴 때를 대비해 상태를 초기화하고 전파합니다.
             if (this.state.isVisible) {
                 this.state.showTextInput = true;
                 this._broadcastState();
@@ -77,7 +181,7 @@ class AskService {
      * @param {string} userPrompt
      * @returns {Promise<{success: boolean, response?: string, error?: string}>}
      */
-    async sendMessage(userPrompt) {
+    async sendMessage(userPrompt, conversationHistoryRaw=[]) {
         if (this.abortController) {
             this.abortController.abort('New request received.');
         }
@@ -117,20 +221,7 @@ class AskService {
             const screenshotResult = await captureScreenshot({ quality: 'medium' });
             const screenshotBase64 = screenshotResult.success ? screenshotResult.base64 : null;
 
-            let conversationHistoryRaw = [];
-            try {
-                const history = listenService.getConversationHistory();
-                if (history && Array.isArray(history) && history.length > 0) {
-                    console.log(`[AskService] Using conversation history from ListenService ${history.length} items).`);
-                    conversationHistoryRaw = history;
-                } else {
-                    console.log('[AskService] No active conversation history found in ListenService.');
-                }
-            } catch (error) {
-                console.error('[AskService] Failed to get conversation history from ListenService:', error);
-            }
             const conversationHistory = this._formatConversationForPrompt(conversationHistoryRaw);
-            console.log(`[AskService] Using conversation history (${conversationHistory}`);
 
             const systemPrompt = getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
 
@@ -241,6 +332,9 @@ class AskService {
                 console.log(`[AskService] Stream reading was intentionally cancelled. Reason: ${signal.reason}`);
             } else {
                 console.error('[AskService] Error while processing stream:', streamError);
+                if (askWin && !askWin.isDestroyed()) {
+                    askWin.webContents.send('ask-response-stream-error', { error: streamError.message });
+                }
             }
         } finally {
             this.state.isStreaming = false;
@@ -255,6 +349,12 @@ class AskService {
                 }
             }
         }
+    }
+
+    handleStopScreenCapture() {
+        lastScreenshot = null;
+        console.log('[AskService] Stopped screen capture and cleared cache.');
+        return { success: true };
     }
 }
 
