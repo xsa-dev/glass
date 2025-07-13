@@ -157,19 +157,21 @@ class WhisperService extends LocalAIServiceBase {
         const modelPath = await this.getModelPath(modelId);
         const checksumInfo = DOWNLOAD_CHECKSUMS.whisper.models[modelId];
         
-        this.emit('downloadProgress', { modelId, progress: 0 });
+        this.emit('download-progress', { modelId, progress: 0 });
         
         await this.downloadWithRetry(modelInfo.url, modelPath, {
             expectedChecksum: checksumInfo?.sha256,
+            modelId, // modelId를 전달하여 LocalAIServiceBase에서 이벤트 발생 시 사용
             onProgress: (progress) => {
-                this.emit('downloadProgress', { modelId, progress });
+                this.emit('download-progress', { modelId, progress });
             }
         });
         
         console.log(`[WhisperService] Model ${modelId} downloaded successfully`);
+        this.emit('download-complete', { modelId });
     }
 
-    async handleDownloadModel(event, modelId) {
+    async handleDownloadModel(modelId) {
         try {
             console.log(`[WhisperService] Handling download for model: ${modelId}`);
 
@@ -177,19 +179,7 @@ class WhisperService extends LocalAIServiceBase {
                 await this.initialize();
             }
 
-            const progressHandler = (data) => {
-                if (data.modelId === modelId && event && event.sender) {
-                    event.sender.send('whisper:download-progress', data);
-                }
-            };
-            
-            this.on('downloadProgress', progressHandler);
-            
-            try {
-                await this.ensureModelAvailable(modelId);
-            } finally {
-                this.removeListener('downloadProgress', progressHandler);
-            }
+            await this.ensureModelAvailable(modelId);
             
             return { success: true };
         } catch (error) {

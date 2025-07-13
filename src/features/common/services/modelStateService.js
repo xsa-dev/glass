@@ -1,6 +1,6 @@
 const Store = require('electron-store');
 const fetch = require('node-fetch');
-const { ipcMain, webContents } = require('electron');
+const { EventEmitter } = require('events');
 const { PROVIDERS, getProviderClass } = require('../ai/factory');
 const encryptionService = require('./encryptionService');
 const providerSettingsRepository = require('../repositories/providerSettings');
@@ -9,8 +9,9 @@ const userModelSelectionsRepository = require('../repositories/userModelSelectio
 // Import authService directly (singleton)
 const authService = require('./authService');
 
-class ModelStateService {
+class ModelStateService extends EventEmitter {
     constructor() {
+        super();
         this.authService = authService;
         this.store = new Store({ name: 'pickle-glass-model-state' });
         this.state = {};
@@ -170,6 +171,9 @@ class ModelStateService {
             };
             
             console.log(`[ModelStateService] State loaded from database for user: ${userId}`);
+            
+            // Auto-select available models after loading state
+            this._autoSelectAvailableModels();
             
         } catch (error) {
             console.error('[ModelStateService] Failed to load state from database:', error);
@@ -331,22 +335,25 @@ class ModelStateService {
     }
 
     async setApiKey(provider, key) {
-        if (provider in this.state.apiKeys) {
-            this.state.apiKeys[provider] = key;
-
-            const supportedTypes = [];
-            if (PROVIDERS[provider]?.llmModels.length > 0 || provider === 'ollama') {
-                supportedTypes.push('llm');
-            }
-            if (PROVIDERS[provider]?.sttModels.length > 0 || provider === 'whisper') {
-                supportedTypes.push('stt');
-            }
-
-            this._autoSelectAvailableModels(supportedTypes);
-            await this._saveState();
-            return true;
+        console.log(`[ModelStateService] setApiKey: ${provider}`);
+        if (!provider) {
+            throw new Error('Provider is required');
         }
-        return false;
+        
+        let finalKey = key;
+        
+        // Handle encryption for non-firebase providers
+        if (provider !== 'firebase' && key && key !== 'local') {
+            finalKey = await encryptionService.encrypt(key);
+        }
+        
+        this.state.apiKeys[provider] = finalKey;
+        await this._saveState();
+        
+        this._autoSelectAvailableModels([]);
+        
+        this.emit('state-changed', this.state);
+        this.emit('settings-updated');
     }
 
     getApiKey(provider) {
@@ -358,19 +365,15 @@ class ModelStateService {
         return displayKeys;
     }
 
-    removeApiKey(provider) {
-        console.log(`[ModelStateService] Removing API key for provider: ${provider}`);
-        if (provider in this.state.apiKeys) {
-            this.state.apiKeys[provider] = null;
-            const llmProvider = this.getProviderForModel('llm', this.state.selectedModels.llm);
-            if (llmProvider === provider) this.state.selectedModels.llm = null;
-
-            const sttProvider = this.getProviderForModel('stt', this.state.selectedModels.stt);
-            if (sttProvider === provider) this.state.selectedModels.stt = null;
-            
-            this._autoSelectAvailableModels();
+    async removeApiKey(provider) {
+        if (this.state.apiKeys[provider]) {
+            delete this.state.apiKeys[provider];
             this._saveState();
-            this._logCurrentSelection();
+            
+            this._autoSelectAvailableModels([]);
+            
+            this.emit('state-changed', this.state);
+            this.emit('settings-updated');
             return true;
         }
         return false;
@@ -456,11 +459,36 @@ class ModelStateService {
         const available = [];
         const modelList = type === 'llm' ? 'llmModels' : 'sttModels';
 
-        Object.entries(this.state.apiKeys).forEach(([providerId, key]) => {
-            if (key && PROVIDERS[providerId]?.[modelList]) {
+        for (const [providerId, key] of Object.entries(this.state.apiKeys)) {
+            if (!key) continue;
+            
+            // Ollama의 경우 데이터베이스에서 설치된 모델을 가져오기
+            if (providerId === 'ollama' && type === 'llm') {
+                try {
+                    const ollamaModelRepository = require('../repositories/ollamaModel');
+                    const installedModels = ollamaModelRepository.getInstalledModels();
+                    const ollamaModels = installedModels.map(model => ({
+                        id: model.name,
+                        name: model.name
+                    }));
+                    available.push(...ollamaModels);
+                } catch (error) {
+                    console.warn('[ModelStateService] Failed to get Ollama models from DB:', error.message);
+                }
+            }
+            // Whisper의 경우 정적 모델 목록 사용 (설치 상태는 별도 확인)
+            else if (providerId === 'whisper' && type === 'stt') {
+                // Whisper 모델은 factory.js의 정적 목록 사용
+                if (PROVIDERS[providerId]?.[modelList]) {
+                    available.push(...PROVIDERS[providerId][modelList]);
+                }
+            }
+            // 다른 provider들은 기존 로직 사용
+            else if (PROVIDERS[providerId]?.[modelList]) {
                 available.push(...PROVIDERS[providerId][modelList]);
             }
-        });
+        }
+        
         return [...new Map(available.map(item => [item.id, item])).values()];
     }
     
@@ -469,20 +497,28 @@ class ModelStateService {
     }
     
     setSelectedModel(type, modelId) {
-        const provider = this.getProviderForModel(type, modelId);
-        if (provider && this.state.apiKeys[provider]) {
-            const previousModel = this.state.selectedModels[type];
-            this.state.selectedModels[type] = modelId;
-            this._saveState();
-            
-            // Auto warm-up for Ollama LLM models when changed
-            if (type === 'llm' && provider === 'ollama' && modelId !== previousModel) {
-                this._autoWarmUpOllamaModel(modelId, previousModel);
-            }
-            
-            return true;
+        const availableModels = this.getAvailableModels(type);
+        const isAvailable = availableModels.some(model => model.id === modelId);
+        
+        if (!isAvailable) {
+            console.warn(`[ModelStateService] Model ${modelId} is not available for type ${type}`);
+            return false;
         }
-        return false;
+        
+        const previousModelId = this.state.selectedModels[type];
+        this.state.selectedModels[type] = modelId;
+        this._saveState();
+        
+        console.log(`[ModelStateService] Selected ${type} model: ${modelId} (was: ${previousModelId})`);
+        
+        // Auto warm-up for Ollama models
+        if (type === 'llm' && modelId && modelId !== previousModelId) {
+            this._autoWarmUpOllamaModel(modelId, previousModelId);
+        }
+        
+        this.emit('state-changed', this.state);
+        this.emit('settings-updated');
+        return true;
     }
 
     /**
@@ -544,13 +580,11 @@ class ModelStateService {
 
     async handleRemoveApiKey(provider) {
         console.log(`[ModelStateService] handleRemoveApiKey: ${provider}`);
-        const success = this.removeApiKey(provider);
+        const success = await this.removeApiKey(provider);
         if (success) {
             const selectedModels = this.getSelectedModels();
             if (!selectedModels.llm || !selectedModels.stt) {
-                webContents.getAllWebContents().forEach(wc => {
-                    wc.send('force-show-apikey-header');
-                });
+                this.emit('force-show-apikey-header');
             }
         }
         return success;

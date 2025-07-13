@@ -1,5 +1,5 @@
 import { html, css, LitElement } from "../assets/lit-core-2.7.4.min.js"
-import { getOllamaProgressTracker } from "../../features/common/services/localProgressTracker.js"
+// import { getOllamaProgressTracker } from "../../features/common/services/localProgressTracker.js" // 제거됨
 
 export class ApiKeyHeader extends LitElement {
   //////// after_modelStateService ////////
@@ -304,7 +304,6 @@ export class ApiKeyHeader extends LitElement {
     this.ollamaStatus = { installed: false, running: false };
     this.installingModel = null;
     this.installProgress = 0;
-    this.progressTracker = getOllamaProgressTracker();
     this.whisperInstallingModels = {};
     
     // Professional operation management system
@@ -1607,7 +1606,7 @@ export class ApiKeyHeader extends LitElement {
     
     // Cancel any ongoing installations when component is destroyed
     if (this.installingModel) {
-      this.progressTracker.cancelInstallation(this.installingModel);
+      // this.progressTracker.cancelInstallation(this.installingModel); // 제거됨
     }
     
     // Cleanup event listeners

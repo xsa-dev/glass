@@ -211,7 +211,7 @@ class AskService {
         let sessionId;
 
         try {
-            console.log(`[AskService] 🤖 Processing message: ${userPrompt.substring(0, 50)}...`);
+            console.log(`[AskService] Processing message: ${userPrompt.substring(0, 50)}...`);
             
             this.state = {
                 ...this.state,
@@ -237,9 +237,9 @@ class AskService {
             const screenshotBase64 = screenshotResult.success ? screenshotResult.base64 : null;
 
             const conversationHistory = this._formatConversationForPrompt(conversationHistoryRaw);
-
             const systemPrompt = getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
 
+            // 첫 번째 시도: 스크린샷 포함 (가능한 경우)
             const messages = [
                 { role: 'system', content: systemPrompt },
                 {
@@ -266,35 +266,78 @@ class AskService {
                 portkeyVirtualKey: modelInfo.provider === 'openai-glass' ? modelInfo.apiKey : undefined,
             });
 
-            const response = await streamingLLM.streamChat(messages);
-            const askWin = getWindowPool()?.get('ask');
+            try {
+                const response = await streamingLLM.streamChat(messages);
+                const askWin = getWindowPool()?.get('ask');
 
-            if (!askWin || askWin.isDestroyed()) {
-                console.error("[AskService] Ask window is not available to send stream to.");
-                response.body.getReader().cancel();
-                return { success: false, error: 'Ask window is not available.' };
+                if (!askWin || askWin.isDestroyed()) {
+                    console.error("[AskService] Ask window is not available to send stream to.");
+                    response.body.getReader().cancel();
+                    return { success: false, error: 'Ask window is not available.' };
+                }
+
+                const reader = response.body.getReader();
+                signal.addEventListener('abort', () => {
+                    console.log(`[AskService] Aborting stream reader. Reason: ${signal.reason}`);
+                    reader.cancel(signal.reason).catch(() => { /* 이미 취소된 경우의 오류는 무시 */ });
+                });
+
+                await this._processStream(reader, askWin, sessionId, signal);
+                return { success: true };
+
+            } catch (multimodalError) {
+                // 멀티모달 요청이 실패했고 스크린샷이 포함되어 있다면 텍스트만으로 재시도
+                if (screenshotBase64 && this._isMultimodalError(multimodalError)) {
+                    console.log(`[AskService] Multimodal request failed, retrying with text-only: ${multimodalError.message}`);
+                    
+                    // 텍스트만으로 메시지 재구성
+                    const textOnlyMessages = [
+                        { role: 'system', content: systemPrompt },
+                        {
+                            role: 'user',
+                            content: `User Request: ${userPrompt.trim()}`
+                        }
+                    ];
+
+                    const fallbackResponse = await streamingLLM.streamChat(textOnlyMessages);
+                    const askWin = getWindowPool()?.get('ask');
+
+                    if (!askWin || askWin.isDestroyed()) {
+                        console.error("[AskService] Ask window is not available for fallback response.");
+                        fallbackResponse.body.getReader().cancel();
+                        return { success: false, error: 'Ask window is not available.' };
+                    }
+
+                    const fallbackReader = fallbackResponse.body.getReader();
+                    signal.addEventListener('abort', () => {
+                        console.log(`[AskService] Aborting fallback stream reader. Reason: ${signal.reason}`);
+                        fallbackReader.cancel(signal.reason).catch(() => {});
+                    });
+
+                    await this._processStream(fallbackReader, askWin, sessionId, signal);
+                    return { success: true };
+                } else {
+                    // 다른 종류의 에러이거나 스크린샷이 없었다면 그대로 throw
+                    throw multimodalError;
+                }
             }
-
-            const reader = response.body.getReader();
-            signal.addEventListener('abort', () => {
-                console.log(`[AskService] Aborting stream reader. Reason: ${signal.reason}`);
-                reader.cancel(signal.reason).catch(() => { /* 이미 취소된 경우의 오류는 무시 */ });
-            });
-
-            await this._processStream(reader, askWin, sessionId, signal);
-
-            return { success: true };
 
         } catch (error) {
-            if (error.name === 'AbortError') {
-                console.log('[AskService] SendMessage operation was successfully aborted.');
-                return { success: true, response: 'Cancelled' };
+            console.error('[AskService] Error during message processing:', error);
+            this.state = {
+                ...this.state,
+                isLoading: false,
+                isStreaming: false,
+                showTextInput: true,
+            };
+            this._broadcastState();
+
+            const askWin = getWindowPool()?.get('ask');
+            if (askWin && !askWin.isDestroyed()) {
+                const streamError = error.message || 'Unknown error occurred';
+                askWin.webContents.send('ask-response-stream-error', { error: streamError });
             }
 
-            console.error('[AskService] Error processing message:', error);
-            this.state.isLoading = false;
-            this.state.error = error.message;
-            this._broadcastState();
             return { success: false, error: error.message };
         }
     }
@@ -366,6 +409,23 @@ class AskService {
         }
     }
 
+    /**
+     * 멀티모달 관련 에러인지 판단
+     * @private
+     */
+    _isMultimodalError(error) {
+        const errorMessage = error.message?.toLowerCase() || '';
+        return (
+            errorMessage.includes('vision') ||
+            errorMessage.includes('image') ||
+            errorMessage.includes('multimodal') ||
+            errorMessage.includes('unsupported') ||
+            errorMessage.includes('image_url') ||
+            errorMessage.includes('400') ||  // Bad Request often for unsupported features
+            errorMessage.includes('invalid') ||
+            errorMessage.includes('not supported')
+        );
+    }
 }
 
 const askService = new AskService();

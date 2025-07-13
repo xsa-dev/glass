@@ -152,7 +152,8 @@ class LocalAIServiceBase extends EventEmitter {
         const { 
             onProgress = null,
             headers = { 'User-Agent': 'Glass-App' },
-            timeout = 300000 // 5 minutes default
+            timeout = 300000, // 5 minutes default
+            modelId = null // 모델 ID를 위한 추가 옵션
         } = options;
 
         return new Promise((resolve, reject) => {
@@ -190,9 +191,23 @@ class LocalAIServiceBase extends EventEmitter {
                 response.on('data', (chunk) => {
                     downloadedSize += chunk.length;
                     
-                    if (onProgress && totalSize > 0) {
+                    if (totalSize > 0) {
                         const progress = Math.round((downloadedSize / totalSize) * 100);
-                        onProgress(progress, downloadedSize, totalSize);
+                        
+                        // 이벤트 기반 진행률 보고
+                        if (modelId) {
+                            this.emit('download-progress', { 
+                                modelId, 
+                                progress, 
+                                downloadedSize, 
+                                totalSize 
+                            });
+                        }
+                        
+                        // 기존 콜백 지원 (호환성 유지)
+                        if (onProgress) {
+                            onProgress(progress, downloadedSize, totalSize);
+                        }
                     }
                 });
 
@@ -200,7 +215,7 @@ class LocalAIServiceBase extends EventEmitter {
 
                 file.on('finish', () => {
                     file.close(() => {
-                        this.emit('download-complete', { url, destination, size: downloadedSize });
+                        this.emit('download-complete', { url, destination, size: downloadedSize, modelId });
                         resolve({ success: true, size: downloadedSize });
                     });
                 });
@@ -216,7 +231,7 @@ class LocalAIServiceBase extends EventEmitter {
             request.on('error', (err) => {
                 file.close();
                 fs.unlink(destination, () => {});
-                this.emit('download-error', { url, error: err });
+                this.emit('download-error', { url, error: err, modelId });
                 reject(err);
             });
 
@@ -230,11 +245,20 @@ class LocalAIServiceBase extends EventEmitter {
     }
 
     async downloadWithRetry(url, destination, options = {}) {
-        const { maxRetries = 3, retryDelay = 1000, expectedChecksum = null, ...downloadOptions } = options;
+        const { 
+            maxRetries = 3, 
+            retryDelay = 1000, 
+            expectedChecksum = null,
+            modelId = null, // 모델 ID를 위한 추가 옵션
+            ...downloadOptions 
+        } = options;
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                const result = await this.downloadFile(url, destination, downloadOptions);
+                const result = await this.downloadFile(url, destination, { 
+                    ...downloadOptions, 
+                    modelId 
+                });
                 
                 if (expectedChecksum) {
                     const isValid = await this.verifyChecksum(destination, expectedChecksum);
@@ -248,6 +272,12 @@ class LocalAIServiceBase extends EventEmitter {
                 return result;
             } catch (error) {
                 if (attempt === maxRetries) {
+                    this.emit('download-error', { 
+                        url, 
+                        error: error.message, 
+                        modelId,
+                        attempt: attempt
+                    });
                     throw error;
                 }
                 
@@ -255,6 +285,23 @@ class LocalAIServiceBase extends EventEmitter {
                 await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
             }
         }
+    }
+
+    // 모델 pull을 위한 이벤트 발생 메서드 추가
+    emitPullProgress(modelId, progress, status = 'pulling') {
+        this.emit('pull-progress', { 
+            modelId, 
+            progress, 
+            status 
+        });
+    }
+
+    emitPullComplete(modelId) {
+        this.emit('pull-complete', { modelId });
+    }
+
+    emitPullError(modelId, error) {
+        this.emit('pull-error', { modelId, error });
     }
 
     async verifyChecksum(filePath, expectedChecksum) {

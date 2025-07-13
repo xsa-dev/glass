@@ -28,7 +28,7 @@ class OllamaService extends LocalAIServiceBase {
         
         // Configuration
         this.requestTimeout = 8000; // 8s for health checks
-        this.warmupTimeout = 15000; // 15s for model warmup
+        this.warmupTimeout = 60000; // 60s for model warmup (늘림)
         this.healthCheckInterval = 60000; // 1min between health checks
         this.circuitBreakerThreshold = 3;
         this.circuitBreakerCooldown = 30000; // 30s
@@ -639,8 +639,48 @@ class OllamaService extends LocalAIServiceBase {
 
             return true;
         } catch (error) {
-            console.error(`[OllamaService] Failed to warm up model ${modelName}:`, error.message);
-            return false;
+            // Check if it's a 404 error (model not found/installed)
+            if (error.message.includes('HTTP 404') || error.message.includes('Not Found')) {
+                console.log(`[OllamaService] Model ${modelName} not found (404), attempting to install...`);
+                
+                try {
+                    // Try to install the model
+                    await this.pullModel(modelName);
+                    console.log(`[OllamaService] Successfully installed model ${modelName}, retrying warm-up...`);
+                    
+                    // Update database to reflect installation
+                    await ollamaModelRepository.updateInstallStatus(modelName, true, false);
+                    
+                    // Retry warm-up after installation
+                    const retryResponse = await this._makeRequest(`${this.baseUrl}/api/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model: modelName,
+                            messages: [
+                                { role: 'user', content: 'Hi' }
+                            ],
+                            stream: false,
+                            options: {
+                                num_predict: 1,
+                                temperature: 0
+                            }
+                        }),
+                        timeout: this.warmupTimeout
+                    }, `warmup_retry_${modelName}`);
+                    
+                    console.log(`[OllamaService] Successfully warmed up model ${modelName} after installation`);
+                    return true;
+                    
+                } catch (installError) {
+                    console.error(`[OllamaService] Failed to auto-install model ${modelName}:`, installError.message);
+                    await ollamaModelRepository.updateInstallStatus(modelName, false, false);
+                    return false;
+                }
+            } else {
+                console.error(`[OllamaService] Failed to warm up model ${modelName}:`, error.message);
+                return false;
+            }
         }
     }
 
@@ -671,14 +711,8 @@ class OllamaService extends LocalAIServiceBase {
                 return false;
             }
 
-            // Check if model is installed
-            const isInstalled = await this.isModelInstalled(llmModelId);
-            if (!isInstalled) {
-                console.log(`[OllamaService] Model ${llmModelId} not installed, skipping warm-up`);
-                return false;
-            }
-
-            console.log(`[OllamaService] Auto-warming up selected model: ${llmModelId}`);
+            // 설치 여부 체크 제거 - _performWarmUp에서 자동으로 설치 처리
+            console.log(`[OllamaService] Auto-warming up selected model: ${llmModelId} (will auto-install if needed)`);
             return await this.warmUpModel(llmModelId);
             
         } catch (error) {
@@ -844,10 +878,10 @@ class OllamaService extends LocalAIServiceBase {
         }
     }
 
-    async handleInstall(event) {
+    async handleInstall() {
         try {
             const onProgress = (data) => {
-                event.sender.send('ollama:install-progress', data);
+                this.emit('install-progress', data);
             };
 
             await this.autoInstall(onProgress);
@@ -857,26 +891,26 @@ class OllamaService extends LocalAIServiceBase {
                 await this.startService();
                 onProgress({ stage: 'starting', message: 'Ollama service started.', progress: 100 });
             }
-            event.sender.send('ollama:install-complete', { success: true });
+            this.emit('install-complete', { success: true });
             return { success: true };
         } catch (error) {
             console.error('[OllamaService] Failed to install:', error);
-            event.sender.send('ollama:install-complete', { success: false, error: error.message });
+            this.emit('install-complete', { success: false, error: error.message });
             return { success: false, error: error.message };
         }
     }
 
-    async handleStartService(event) {
+    async handleStartService() {
         try {
             if (!await this.isServiceRunning()) {
                 console.log('[OllamaService] Starting Ollama service...');
                 await this.startService();
             }
-            event.sender.send('ollama:install-complete', { success: true });
+            this.emit('install-complete', { success: true });
             return { success: true };
         } catch (error) {
             console.error('[OllamaService] Failed to start service:', error);
-            event.sender.send('ollama:install-complete', { success: false, error: error.message });
+            this.emit('install-complete', { success: false, error: error.message });
             return { success: false, error: error.message };
         }
     }
@@ -914,28 +948,11 @@ class OllamaService extends LocalAIServiceBase {
         }
     }
 
-    async handlePullModel(event, modelName) {
+    async handlePullModel(modelName) {
         try {
             console.log(`[OllamaService] Starting model pull: ${modelName}`);
 
             await ollamaModelRepository.updateInstallStatus(modelName, false, true);
-
-            const progressHandler = (data) => {
-                if (data.model === modelName) {
-                    event.sender.send('ollama:pull-progress', data);
-                }
-            };
-
-            const completeHandler = (data) => {
-                if (data.model === modelName) {
-                    console.log(`[OllamaService] Model ${modelName} pull completed`);
-                    this.removeListener('pull-progress', progressHandler);
-                    this.removeListener('pull-complete', completeHandler);
-                }
-            };
-
-            this.on('pull-progress', progressHandler);
-            this.on('pull-complete', completeHandler);
 
             await this.pullModel(modelName);
 
@@ -946,6 +963,7 @@ class OllamaService extends LocalAIServiceBase {
         } catch (error) {
             console.error('[OllamaService] Failed to pull model:', error);
             await ollamaModelRepository.updateInstallStatus(modelName, false, false);
+            this.emit('pull-error', { model: modelName, error: error.message });
             return { success: false, error: error.message };
         }
     }
@@ -990,7 +1008,7 @@ class OllamaService extends LocalAIServiceBase {
         }
     }
 
-    async handleShutdown(event, force = false) {
+    async handleShutdown(force = false) {
         try {
             console.log(`[OllamaService] Manual shutdown requested (force: ${force})`);
             const success = await this.shutdown(force);

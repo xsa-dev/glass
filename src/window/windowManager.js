@@ -7,6 +7,53 @@ const shortcutsService = require('../features/shortcuts/shortcutsService');
 const internalBridge = require('../bridge/internalBridge');
 const permissionRepository = require('../features/common/repositories/permission');
 
+// internalBridge 이벤트 리스너 설정
+function setupInternalBridgeListeners() {
+    // 창 표시/숨기기 요청
+    internalBridge.on('show-window', (windowName, options = {}) => {
+        console.log(`[WindowManager] Received show-window request for: ${windowName}`);
+        switch (windowName) {
+            case 'settings':
+                showSettingsWindow(options.bounds);
+                break;
+            case 'ask':
+                ensureAskWindowVisible();
+                break;
+            default:
+                console.warn(`[WindowManager] Unknown window name: ${windowName}`);
+        }
+    });
+
+    internalBridge.on('hide-window', (windowName) => {
+        console.log(`[WindowManager] Received hide-window request for: ${windowName}`);
+        switch (windowName) {
+            case 'settings':
+                hideSettingsWindow();
+                break;
+            case 'ask':
+                closeAskWindow();
+                break;
+            default:
+                console.warn(`[WindowManager] Unknown window name: ${windowName}`);
+        }
+    });
+
+    internalBridge.on('toggle-visibility', () => {
+        console.log(`[WindowManager] Received toggle-visibility request`);
+        toggleAllWindowsVisibility();
+    });
+
+    internalBridge.on('set-content-protection', (enabled) => {
+        console.log(`[WindowManager] Received set-content-protection request: ${enabled}`);
+        setContentProtection(enabled);
+    });
+
+    console.log('[WindowManager] Internal bridge listeners configured');
+}
+
+// 초기화 시 내부 브릿지 리스너 설정
+setupInternalBridgeListeners();
+
 /* ────────────────[ GLASS BYPASS ]─────────────── */
 let liquidGlass;
 const isLiquidGlassSupported = () => {
