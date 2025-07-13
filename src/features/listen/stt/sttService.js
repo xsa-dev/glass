@@ -400,7 +400,7 @@ class SttService {
         return true;
     }
 
-    async sendAudioContent(data, mimeType) {
+    async sendMicAudioContent(data, mimeType) {
         // const provider = await this.getAiProvider();
         // const isGemini = provider === 'gemini';
         
