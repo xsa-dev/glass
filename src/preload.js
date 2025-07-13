@@ -132,7 +132,11 @@ contextBridge.exposeInMainWorld('api', {
     
     // Message Handling
     sendMessage: (text) => ipcRenderer.invoke('ask:sendQuestionFromAsk', text),
-    
+
+    // Listeners
+    onAskStateUpdate: (callback) => ipcRenderer.on('ask:stateUpdate', callback),
+    removeOnAskStateUpdate: (callback) => ipcRenderer.removeListener('ask:stateUpdate', callback),
+
     // Listeners
     onSendQuestionToRenderer: (callback) => ipcRenderer.on('ask:sendQuestionToRenderer', callback),
     removeOnSendQuestionToRenderer: (callback) => ipcRenderer.removeListener('ask:sendQuestionToRenderer', callback),

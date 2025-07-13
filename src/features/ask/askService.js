@@ -12,25 +12,52 @@ const { getSystemPrompt } = require('../common/prompts/promptBuilder');
 class AskService {
     constructor() {
         this.abortController = null;
+        this.state = {
+            isVisible: false,
+            isLoading: false,
+            isStreaming: false,
+            currentQuestion: '',
+            currentResponse: '',
+            showTextInput: true,
+        };
         console.log('[AskService] Service instance created.');
+    }
+
+    _broadcastState() {
+        const askWindow = windowPool.get('ask');
+        if (askWindow && !askWindow.isDestroyed()) {
+            askWindow.webContents.send('ask:stateUpdate', this.state);
+        }
     }
 
     async toggleAskButton() {
         const { windowPool, updateLayout } = require('../../window/windowManager');
         const askWindow = windowPool.get('ask');
-        const header = windowPool.get('header');
-        try {
+
+        // 답변이 있거나 스트리밍 중일 때
+        const hasContent = this.state.isStreaming || (this.state.currentResponse && this.state.currentResponse.length > 0);
+
+        if (askWindow.isVisible() && hasContent) {
+            // 창을 닫는 대신, 텍스트 입력창만 토글합니다.
+            this.state.showTextInput = !this.state.showTextInput;
+            this._broadcastState(); // 변경된 상태 전파
+        } else {
+            // 기존의 창 보이기/숨기기 로직
             if (askWindow.isVisible()) {
                 askWindow.webContents.send('window-hide-animation');
+                this.state.isVisible = false;
             } else {
                 console.log('[AskService] Showing hidden Ask window');
+                this.state.isVisible = true;
                 askWindow.show();
                 updateLayout();
                 askWindow.webContents.send('window-show-animation');
             }
-        } catch (error) {
-            console.error('[AskService] error in toggleAskButton:', error);
-            throw error; 
+            // 창이 다시 열릴 때를 대비해 상태를 초기화하고 전파합니다.
+            if (this.state.isVisible) {
+                this.state.showTextInput = true;
+                this._broadcastState();
+            }
         }
     }
     
@@ -69,6 +96,16 @@ class AskService {
 
         try {
             console.log(`[AskService] 🤖 Processing message: ${userPrompt.substring(0, 50)}...`);
+            
+            this.state = {
+                ...this.state,
+                isLoading: true,
+                isStreaming: false,
+                currentQuestion: userPrompt,
+                currentResponse: '',
+                showTextInput: false,
+            };
+            this._broadcastState();
 
             sessionId = await sessionRepository.getOrCreateActive('ask');
             await askRepository.addAiMessage({ sessionId, role: 'user', content: userPrompt.trim() });
@@ -139,10 +176,9 @@ class AskService {
             }
 
             console.error('[AskService] Error processing message:', error);
-            const askWin = windowPool.get('ask');
-            if (askWin && !askWin.isDestroyed()) {
-                askWin.webContents.send('ask-response-stream-error', { error: error.message });
-            }
+            this.state.isLoading = false;
+            this.state.error = error.message;
+            this._broadcastState();
             return { success: false, error: error.message };
         }
     }
@@ -161,6 +197,9 @@ class AskService {
         let fullResponse = '';
 
         try {
+            this.state.isLoading = false;
+            this.state.isStreaming = true;
+            this._broadcastState();
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
@@ -172,9 +211,6 @@ class AskService {
                     if (line.startsWith('data: ')) {
                         const data = line.substring(6);
                         if (data === '[DONE]') {
-                            if (askWin && !askWin.isDestroyed()) {
-                                askWin.webContents.send('ask-response-stream-end');
-                            }
                             return; 
                         }
                         try {
@@ -182,9 +218,8 @@ class AskService {
                             const token = json.choices[0]?.delta?.content || '';
                             if (token) {
                                 fullResponse += token;
-                                if (askWin && !askWin.isDestroyed()) {
-                                    askWin.webContents.send('ask-response-chunk', { token });
-                                }
+                                this.state.currentResponse = fullResponse;
+                                this._broadcastState();
                             }
                         } catch (error) {
                         }
@@ -201,6 +236,9 @@ class AskService {
                 }
             }
         } finally {
+            this.state.isStreaming = false;
+            this.state.currentResponse = fullResponse;
+            this._broadcastState();
             if (fullResponse) {
                  try {
                     await askRepository.addAiMessage({ sessionId, role: 'assistant', content: fullResponse });
