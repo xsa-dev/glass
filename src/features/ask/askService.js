@@ -4,6 +4,7 @@ const { getCurrentModelInfo, windowPool, captureScreenshot } = require('../../wi
 const sessionRepository = require('../common/repositories/session');
 const askRepository = require('./repositories');
 const { getSystemPrompt } = require('../common/prompts/promptBuilder');
+const listenService = require('../listen/listenService');
 
 /**
  * @class
@@ -34,15 +35,12 @@ class AskService {
         const { windowPool, updateLayout } = require('../../window/windowManager');
         const askWindow = windowPool.get('ask');
 
-        // 답변이 있거나 스트리밍 중일 때
         const hasContent = this.state.isStreaming || (this.state.currentResponse && this.state.currentResponse.length > 0);
 
         if (askWindow.isVisible() && hasContent) {
-            // 창을 닫는 대신, 텍스트 입력창만 토글합니다.
             this.state.showTextInput = !this.state.showTextInput;
-            this._broadcastState(); // 변경된 상태 전파
+            this._broadcastState();
         } else {
-            // 기존의 창 보이기/숨기기 로직
             if (askWindow.isVisible()) {
                 askWindow.webContents.send('window-hide-animation');
                 this.state.isVisible = false;
@@ -53,7 +51,6 @@ class AskService {
                 updateLayout();
                 askWindow.webContents.send('window-show-animation');
             }
-            // 창이 다시 열릴 때를 대비해 상태를 초기화하고 전파합니다.
             if (this.state.isVisible) {
                 this.state.showTextInput = true;
                 this._broadcastState();
@@ -80,7 +77,7 @@ class AskService {
      * @param {string} userPrompt
      * @returns {Promise<{success: boolean, response?: string, error?: string}>}
      */
-    async sendMessage(userPrompt, conversationHistoryRaw=[]) {
+    async sendMessage(userPrompt) {
         if (this.abortController) {
             this.abortController.abort('New request received.');
         }
@@ -120,7 +117,20 @@ class AskService {
             const screenshotResult = await captureScreenshot({ quality: 'medium' });
             const screenshotBase64 = screenshotResult.success ? screenshotResult.base64 : null;
 
+            let conversationHistoryRaw = [];
+            try {
+                const history = listenService.getConversationHistory();
+                if (history && Array.isArray(history) && history.length > 0) {
+                    console.log(`[AskService] Using conversation history from ListenService ${history.length} items).`);
+                    conversationHistoryRaw = history;
+                } else {
+                    console.log('[AskService] No active conversation history found in ListenService.');
+                }
+            } catch (error) {
+                console.error('[AskService] Failed to get conversation history from ListenService:', error);
+            }
             const conversationHistory = this._formatConversationForPrompt(conversationHistoryRaw);
+            console.log(`[AskService] Using conversation history (${conversationHistory}`);
 
             const systemPrompt = getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
 
@@ -231,9 +241,6 @@ class AskService {
                 console.log(`[AskService] Stream reading was intentionally cancelled. Reason: ${signal.reason}`);
             } else {
                 console.error('[AskService] Error while processing stream:', streamError);
-                if (askWin && !askWin.isDestroyed()) {
-                    askWin.webContents.send('ask-response-stream-error', { error: streamError.message });
-                }
             }
         } finally {
             this.state.isStreaming = false;

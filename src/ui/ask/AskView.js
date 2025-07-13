@@ -719,15 +719,13 @@ export class AskView extends LitElement {
         this.headerText = 'AI Response';
         this.headerAnimating = false;
         this.isStreaming = false;
-        // this.accumulatedResponse = '';
 
         this.marked = null;
         this.hljs = null;
         this.DOMPurify = null;
         this.isLibrariesLoaded = false;
 
-        // this.handleStreamChunk = this.handleStreamChunk.bind(this);
-        // this.handleStreamEnd = this.handleStreamEnd.bind(this);
+
         this.handleSendText = this.handleSendText.bind(this);
         this.handleTextKeydown = this.handleTextKeydown.bind(this);
         this.handleCopy = this.handleCopy.bind(this);
@@ -770,12 +768,6 @@ export class AskView extends LitElement {
         };
 
         if (window.api) {
-            window.api.askView.onSendQuestionToRenderer(this.handleQuestionFromAssistant);
-            window.api.askView.onHideTextInput(() => {
-                console.log('📤 Hide text input signal received');
-                this.showTextInput = false;
-                this.requestUpdate();
-            });
             window.api.askView.onShowTextInput(() => {
                 console.log('📤 Show text input signal received');
                 if (!this.showTextInput) {
@@ -783,9 +775,6 @@ export class AskView extends LitElement {
                     this.requestUpdate();
                 }
             });
-
-            // window.api.askView.onResponseChunk(this.handleStreamChunk);
-            // window.api.askView.onResponseStreamEnd(this.handleStreamEnd);
 
             window.api.askView.onScrollResponseUp(() => this.handleScroll('up'));
             window.api.askView.onScrollResponseDown(() => this.handleScroll('down'));
@@ -824,11 +813,7 @@ export class AskView extends LitElement {
 
         if (window.api) {
             window.api.askView.removeOnAskStateUpdate(this.handleAskStateUpdate);
-            window.api.askView.removeOnSendQuestionToRenderer(this.handleQuestionFromAssistant);
-            window.api.askView.removeOnHideTextInput(this.handleHideTextInput);
             window.api.askView.removeOnShowTextInput(this.handleShowTextInput);
-            window.api.askView.removeOnResponseChunk(this.handleStreamChunk);
-            window.api.askView.removeOnResponseStreamEnd(this.handleStreamEnd);
             window.api.askView.removeOnScrollResponseUp(this.handleScroll);
             window.api.askView.removeOnScrollResponseDown(this.handleScroll);
             console.log('✅ AskView: IPC 이벤트 리스너 제거 필요');
@@ -917,9 +902,6 @@ export class AskView extends LitElement {
         this.isStreaming = false;
         this.headerText = 'AI Response';
         this.showTextInput = true;
-        // this.accumulatedResponse = '';
-        // this.requestUpdate();
-        // this.renderContent();
     }
 
     handleInputFocus() {
@@ -986,33 +968,7 @@ export class AskView extends LitElement {
         }
     }
 
-    // --- 스트리밍 처리 핸들러 ---
-    // handleStreamChunk(event, { token }) {
-    //     if (!this.isStreaming) {
-    //         this.isStreaming = true;
-    //         this.isLoading = false;
-    //         this.accumulatedResponse = '';
-    //         const container = this.shadowRoot.getElementById('responseContainer');
-    //         if (container) container.innerHTML = '';
-    //         this.headerText = 'AI Response';
-    //         this.headerAnimating = false;
-    //         this.requestUpdate();
-    //     }
-    //     this.accumulatedResponse += token;
-    //     this.renderContent();
-    // }
 
-    // handleStreamEnd() {
-    //     this.isStreaming = false;
-    //     this.currentResponse = this.accumulatedResponse;
-    //     if (this.headerText !== 'AI Response') {
-    //         this.headerText = 'AI Response';
-    //         this.requestUpdate();
-    //     }
-    //     this.renderContent();
-    // }
-
-    // ✨ 렌더링 로직 통합
     renderContent() {
         const responseContainer = this.shadowRoot.getElementById('responseContainer');
         if (!responseContainer) return;
@@ -1029,7 +985,6 @@ export class AskView extends LitElement {
             return;
         }
         
-        // ✨ isStreaming이나 accumulatedResponse 대신 currentResponse를 직접 사용
         let textToRender = this.fixIncompleteMarkdown(this.currentResponse);
         textToRender = this.fixIncompleteCodeBlocks(textToRender);
     
@@ -1269,32 +1224,11 @@ export class AskView extends LitElement {
 
         textInput.value = '';
 
-        // this.currentQuestion = text;
-        // this.lineCopyState = {};
-        // this.showTextInput = false;
-        // this.isLoading = true;
-        // this.isStreaming = false;
-        // this.currentResponse = '';
-        // this.accumulatedResponse = '';
-        // this.startHeaderAnimation();
-        // this.requestUpdate();
-        // this.renderContent();
-
         if (window.api) {
             window.api.askView.sendMessage(text).catch(error => {
                 console.error('Error sending text:', error);
             });
         }
-
-        // if (window.api) {
-        //     window.api.askView.sendMessage(text).catch(error => {
-        //         console.error('Error sending text:', error);
-        //         this.isLoading = false;
-        //         this.isStreaming = false;
-        //         this.currentResponse = `Error: ${error.message}`;
-        //         this.renderContent();
-        //     });
-        // }
     }
 
     handleTextKeydown(e) {
@@ -1311,21 +1245,6 @@ export class AskView extends LitElement {
             this.handleSendText();
         }
     }
-
-    // updated(changedProperties) {
-    //     super.updated(changedProperties);
-    //     if (changedProperties.has('isLoading')) {
-    //         this.renderContent();
-    //     }
-
-    //     if (changedProperties.has('showTextInput') || changedProperties.has('isLoading')) {
-    //         this.adjustWindowHeightThrottled();
-    //     }
-
-    //     if (changedProperties.has('showTextInput') && this.showTextInput) {
-    //         this.focusTextInput();
-    //     }
-    // }
 
     updated(changedProperties) {
         super.updated(changedProperties);
