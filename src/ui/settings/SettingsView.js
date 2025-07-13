@@ -1066,7 +1066,7 @@ export class SettingsView extends LitElement {
     async handlePersonalize() {
         console.log('Personalize clicked');
         try {
-            await window.api.settingsView.openLoginPage();
+            await window.api.settingsView.openPersonalizePage();
         } catch (error) {
             console.error('Failed to open personalize page:', error);
         }

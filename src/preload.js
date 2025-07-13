@@ -182,7 +182,7 @@ contextBridge.exposeInMainWorld('api', {
   settingsView: {
     // User & Auth
     getCurrentUser: () => ipcRenderer.invoke('get-current-user'),
-    openLoginPage: () => ipcRenderer.invoke('open-login-page'),
+    openPersonalizePage: () => ipcRenderer.invoke('open-personalize-page'),
     firebaseLogout: () => ipcRenderer.invoke('firebase-logout'),
     startFirebaseAuth: () => ipcRenderer.invoke('start-firebase-auth'),
 

@@ -6,7 +6,6 @@ const fs = require('node:fs');
 const os = require('os');
 const util = require('util');
 const execFile = util.promisify(require('child_process').execFile);
-const listenService = require('../features/listen/listenService');
 const shortcutsService = require('../features/shortcuts/shortcutsService');
 
 // Try to load sharp, but don't fail if it's not available
@@ -19,8 +18,7 @@ try {
     console.warn('[WindowManager] Screenshot functionality will work with reduced image processing capabilities');
     sharp = null;
 }
-const authService = require('../features/common/services/authService');
-const systemSettingsRepository = require('../features/common/repositories/systemSettings');
+const permissionRepository = require('../features/common/repositories/permission');
 
 /* ────────────────[ GLASS BYPASS ]─────────────── */
 let liquidGlass;
@@ -797,7 +795,7 @@ function setupIpcHandlers(movementManager) {
     ipcMain.handle('mark-permissions-completed', async () => {
         try {
             // This is a system-level setting, not user-specific.
-            await systemSettingsRepository.markPermissionsAsCompleted();
+            await permissionRepository.markPermissionsAsCompleted();
             console.log('[Permissions] Marked permissions as completed');
             return { success: true };
         } catch (error) {
@@ -808,7 +806,7 @@ function setupIpcHandlers(movementManager) {
 
     ipcMain.handle('check-permissions-completed', async () => {
         try {
-            const completed = await systemSettingsRepository.checkPermissionsCompleted();
+            const completed = await permissionRepository.checkPermissionsCompleted();
             console.log('[Permissions] Permissions completed status:', completed);
             return completed;
         } catch (error) {

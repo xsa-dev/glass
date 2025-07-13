@@ -137,7 +137,7 @@ module.exports = {
     });
 
     // 로그인 페이지 열기
-    ipcMain.handle('open-login-page', () => {
+    ipcMain.handle('open-personalize-page', () => {
       const webUrl = process.env.pickleglass_WEB_URL || 'http://localhost:3000';
       const personalizeUrl = `${webUrl}/personalize?desktop=true`;
       shell.openExternal(personalizeUrl);
