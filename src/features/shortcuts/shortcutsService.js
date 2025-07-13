@@ -1,11 +1,24 @@
 const { globalShortcut, screen } = require('electron');
 const shortcutsRepository = require('./repositories');
+const internalBridge = require('../../bridge/internalBridge');
 
 
 class ShortcutsService {
     constructor() {
         this.lastVisibleWindows = new Set(['header']);
         this.mouseEventsIgnored = false;
+        this.movementManager = null;
+        this.windowPool = null;
+    }
+
+    initialize(movementManager, windowPool) {
+        this.movementManager = movementManager;
+        this.windowPool = windowPool;
+        internalBridge.on('reregister-shortcuts', () => {
+            console.log('[ShortcutsService] Reregistering shortcuts due to header state change.');
+            this.registerShortcuts();
+        });
+        console.log('[ShortcutsService] Initialized with dependencies and event listener.');
     }
 
     getDefaultKeybinds() {
@@ -58,6 +71,32 @@ class ShortcutsService {
         return keybinds;
     }
 
+    async handleSaveShortcuts(newKeybinds) {
+        try {
+            await this.saveKeybinds(newKeybinds);
+            const shortcutEditor = this.windowPool.get('shortcut-settings');
+            if (shortcutEditor && !shortcutEditor.isDestroyed()) {
+                shortcutEditor.close(); // This will trigger re-registration on 'closed' event in windowManager
+            } else {
+                // If editor wasn't open, re-register immediately
+                await this.registerShortcuts();
+            }
+            return { success: true };
+        } catch (error) {
+            console.error("Failed to save shortcuts:", error);
+            // On failure, re-register old shortcuts to be safe
+            await this.registerShortcuts();
+            return { success: false, error: error.message };
+        }
+    }
+
+    async handleRestoreDefaults() {
+        const defaults = this.getDefaultKeybinds();
+        await this.saveKeybinds(defaults);
+        await this.registerShortcuts();
+        return defaults;
+    }
+
     async saveKeybinds(newKeybinds) {
         const keybindsToSave = [];
         for (const action in newKeybinds) {
@@ -103,15 +142,19 @@ class ShortcutsService {
         });
     }
 
-    async registerShortcuts(movementManager, windowPool) {
+    async registerShortcuts() {
+        if (!this.movementManager || !this.windowPool) {
+            console.error('[Shortcuts] Service not initialized. Cannot register shortcuts.');
+            return;
+        }
         const keybinds = await this.loadKeybinds();
         globalShortcut.unregisterAll();
         
-        const header = windowPool.get('header');
+        const header = this.windowPool.get('header');
         const mainWindow = header;
 
         const sendToRenderer = (channel, ...args) => {
-            windowPool.forEach(win => {
+            this.windowPool.forEach(win => {
                 if (win && !win.isDestroyed()) {
                     try {
                         win.webContents.send(channel, ...args);
@@ -133,7 +176,7 @@ class ShortcutsService {
         if (displays.length > 1) {
             displays.forEach((display, index) => {
                 const key = `${modifier}+Shift+${index + 1}`;
-                globalShortcut.register(key, () => movementManager.moveToDisplay(display.id));
+                globalShortcut.register(key, () => this.movementManager.moveToDisplay(display.id));
             });
         }
 
@@ -144,14 +187,14 @@ class ShortcutsService {
         ];
         edgeDirections.forEach(({ key, direction }) => {
             globalShortcut.register(key, () => {
-                if (header && header.isVisible()) movementManager.moveToEdge(direction);
+                if (header && header.isVisible()) this.movementManager.moveToEdge(direction);
             });
         });
 
         // --- User-configurable shortcuts ---
         if (header?.currentHeaderState === 'apikey') {
             if (keybinds.toggleVisibility) {
-                globalShortcut.register(keybinds.toggleVisibility, () => this.toggleAllWindowsVisibility(windowPool));
+                globalShortcut.register(keybinds.toggleVisibility, () => this.toggleAllWindowsVisibility(this.windowPool));
             }
             console.log('[Shortcuts] ApiKeyHeader is active, only toggleVisibility shortcut is registered.');
             return;
@@ -164,7 +207,7 @@ class ShortcutsService {
             let callback;
             switch(action) {
                 case 'toggleVisibility':
-                    callback = () => this.toggleAllWindowsVisibility(windowPool);
+                    callback = () => this.toggleAllWindowsVisibility(this.windowPool);
                     break;
                 case 'nextStep':
                     // Late require to prevent circular dependency
@@ -172,7 +215,7 @@ class ShortcutsService {
                     break;
                 case 'scrollUp':
                     callback = () => {
-                        const askWindow = windowPool.get('ask');
+                        const askWindow = this.windowPool.get('ask');
                         if (askWindow && !askWindow.isDestroyed() && askWindow.isVisible()) {
                             askWindow.webContents.send('scroll-response-up');
                         }
@@ -180,23 +223,23 @@ class ShortcutsService {
                     break;
                 case 'scrollDown':
                     callback = () => {
-                        const askWindow = windowPool.get('ask');
+                        const askWindow = this.windowPool.get('ask');
                         if (askWindow && !askWindow.isDestroyed() && askWindow.isVisible()) {
                             askWindow.webContents.send('scroll-response-down');
                         }
                     };
                     break;
                 case 'moveUp':
-                    callback = () => { if (header && header.isVisible()) movementManager.moveStep('up'); };
+                    callback = () => { if (header && header.isVisible()) this.movementManager.moveStep('up'); };
                     break;
                 case 'moveDown':
-                    callback = () => { if (header && header.isVisible()) movementManager.moveStep('down'); };
+                    callback = () => { if (header && header.isVisible()) this.movementManager.moveStep('down'); };
                     break;
                 case 'moveLeft':
-                    callback = () => { if (header && header.isVisible()) movementManager.moveStep('left'); };
+                    callback = () => { if (header && header.isVisible()) this.movementManager.moveStep('left'); };
                     break;
                 case 'moveRight':
-                    callback = () => { if (header && header.isVisible()) movementManager.moveStep('right'); };
+                    callback = () => { if (header && header.isVisible()) this.movementManager.moveStep('right'); };
                     break;
                 case 'toggleClickThrough':
                      callback = () => {

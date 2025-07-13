@@ -2,9 +2,10 @@
 const { EventEmitter } = require('events');
 
 // FeatureCore와 WindowCore를 잇는 내부 이벤트 버스
-module.exports = new EventEmitter();
+const internalBridge = new EventEmitter();
+module.exports = internalBridge;
 
 // 예시 이벤트
-internalBridge.on('content-protection-changed', (enabled) => {
-  // windowManager에서 처리
-});
+// internalBridge.on('content-protection-changed', (enabled) => {
+//   // windowManager에서 처리
+// });

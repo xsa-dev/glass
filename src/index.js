@@ -27,6 +27,7 @@ const settingsService = require('./features/settings/settingsService');
 const sessionRepository = require('./features/common/repositories/session');
 const modelStateService = require('./features/common/services/modelStateService');
 const featureBridge = require('./bridge/featureBridge');
+const windowBridge = require('./bridge/windowBridge');
 
 // Global variables
 const eventBridge = new EventEmitter();
@@ -198,6 +199,7 @@ app.whenReady().then(async () => {
         //////// after_modelStateService ////////
 
         featureBridge.initialize();  // 추가: featureBridge 초기화
+        windowBridge.initialize();
         setupWebDataHandlers();
 
         // Initialize Ollama models in database

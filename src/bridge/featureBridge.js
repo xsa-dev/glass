@@ -5,6 +5,7 @@ const authService = require('../features/common/services/authService');
 const whisperService = require('../features/common/services/whisperService');
 const ollamaService = require('../features/common/services/ollamaService');
 const modelStateService = require('../features/common/services/modelStateService');
+const shortcutsService = require('../features/shortcuts/shortcutsService');
 
 const askService = require('../features/ask/askService');
 const listenService = require('../features/listen/listenService');
@@ -25,6 +26,12 @@ module.exports = {
     ipcMain.handle('settings:get-ollama-status', async () => await settingsService.getOllamaStatus());
     ipcMain.handle('settings:ensure-ollama-ready', async () => await settingsService.ensureOllamaReady());
     ipcMain.handle('settings:shutdown-ollama', async () => await settingsService.shutdownOllama());
+
+    // Shortcuts
+    ipcMain.handle('get-current-shortcuts', async () => await shortcutsService.loadKeybinds());
+    ipcMain.handle('get-default-shortcuts', async () => await shortcutsService.handleRestoreDefaults());
+    ipcMain.handle('save-shortcuts', async (event, newKeybinds) => await shortcutsService.handleSaveShortcuts(newKeybinds));
+
 
     // User/Auth
     ipcMain.handle('get-current-user', () => authService.getCurrentUser());

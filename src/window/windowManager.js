@@ -7,6 +7,7 @@ const os = require('os');
 const util = require('util');
 const execFile = util.promisify(require('child_process').execFile);
 const shortcutsService = require('../features/shortcuts/shortcutsService');
+const internalBridge = require('../bridge/internalBridge');
 
 // Try to load sharp, but don't fail if it's not available
 let sharp;
@@ -67,8 +68,140 @@ function updateLayout() {
 }
 
 let movementManager = null;
-const windowBridge = require('../bridge/windowBridge');
 
+const setContentProtection = (status) => {
+    isContentProtectionOn = status;
+    console.log(`[Protection] Content protection toggled to: ${isContentProtectionOn}`);
+    windowPool.forEach(win => {
+        if (win && !win.isDestroyed()) {
+            win.setContentProtection(isContentProtectionOn);
+        }
+    });
+};
+
+const getContentProtectionStatus = () => isContentProtectionOn;
+
+const toggleContentProtection = () => {
+    const newStatus = !getContentProtectionStatus();
+    setContentProtection(newStatus);
+    return newStatus;
+};
+
+const resizeHeaderWindow = ({ width, height }) => {
+    const header = windowPool.get('header');
+    if (header) {
+      console.log(`[WindowManager] Resize request: ${width}x${height}`);
+      
+      if (movementManager && movementManager.isAnimating) {
+        console.log('[WindowManager] Skipping resize during animation');
+        return { success: false, error: 'Cannot resize during animation' };
+      }
+
+      const currentBounds = header.getBounds();
+      console.log(`[WindowManager] Current bounds: ${currentBounds.width}x${currentBounds.height} at (${currentBounds.x}, ${currentBounds.y})`);
+      
+      if (currentBounds.width === width && currentBounds.height === height) {
+        console.log('[WindowManager] Already at target size, skipping resize');
+        return { success: true };
+      }
+
+      const wasResizable = header.isResizable();
+      if (!wasResizable) {
+        header.setResizable(true);
+      }
+
+      const centerX = currentBounds.x + currentBounds.width / 2;
+      const newX = Math.round(centerX - width / 2);
+
+      const display = getCurrentDisplay(header);
+      const { x: workAreaX, width: workAreaWidth } = display.workArea;
+      
+      const clampedX = Math.max(workAreaX, Math.min(workAreaX + workAreaWidth - width, newX));
+
+      header.setBounds({ x: clampedX, y: currentBounds.y, width, height });
+
+      if (!wasResizable) {
+        header.setResizable(false);
+      }
+      
+      if (updateLayout) {
+        updateLayout();
+      }
+      
+      return { success: true };
+    }
+    return { success: false, error: 'Header window not found' };
+};
+
+const openShortcutEditor = () => {
+    const header = windowPool.get('header');
+    if (!header) return;
+    globalShortcut.unregisterAll();
+    createFeatureWindows(header, 'shortcut-settings');
+};
+
+const showSettingsWindow = (bounds) => {
+    if (!bounds) return;
+    const win = windowPool.get('settings');
+    if (win && !win.isDestroyed()) {
+      if (settingsHideTimer) {
+        clearTimeout(settingsHideTimer);
+        settingsHideTimer = null;
+      }
+      const header = windowPool.get('header');
+      const headerBounds = header?.getBounds() ?? { x: 0, y: 0 };
+      const settingsBounds = win.getBounds();
+      const disp = getCurrentDisplay(header);
+      const { x: waX, y: waY, width: waW, height: waH } = disp.workArea;
+      let x = Math.round(headerBounds.x + (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2 - settingsBounds.width / 2);
+      let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 31);
+      x = Math.max(waX + 10, Math.min(waX + waW - settingsBounds.width - 10, x));
+      y = Math.max(waY + 10, Math.min(waY + waH - settingsBounds.height - 10, y));
+      win.setBounds({ x, y });
+      win.__lockedByButton = true;
+      win.show();
+      win.moveTop();
+      win.setAlwaysOnTop(true);
+    }
+};
+
+const hideSettingsWindow = () => {
+    const window = windowPool.get("settings");
+    if (window && !window.isDestroyed()) {
+      if (settingsHideTimer) {
+        clearTimeout(settingsHideTimer);
+      }
+      settingsHideTimer = setTimeout(() => {
+        if (window && !window.isDestroyed()) {
+          window.setAlwaysOnTop(false);
+          window.hide();
+        }
+        settingsHideTimer = null;
+      }, 200);
+      
+      window.__lockedByButton = false;
+    }
+};
+
+const cancelHideSettingsWindow = () => {
+    if (settingsHideTimer) {
+      clearTimeout(settingsHideTimer);
+      settingsHideTimer = null;
+    }
+};
+
+const openLoginPage = () => {
+    const webUrl = process.env.pickleglass_WEB_URL || 'http://localhost:3000';
+    const personalizeUrl = `${webUrl}/personalize?desktop=true`;
+    shell.openExternal(personalizeUrl);
+    console.log('Opening personalization page:', personalizeUrl);
+};
+
+const moveWindowStep = (direction) => {
+    if (movementManager) {
+        movementManager.moveStep(direction);
+    }
+};
 
 
 function createFeatureWindows(header, namesToCreate) {
@@ -255,7 +388,7 @@ function createFeatureWindows(header, namesToCreate) {
                     restoreClicks();
                     windowPool.delete('shortcut-settings');
                     console.log('[Shortcuts] Re-enabled after editing.');
-                    shortcutsService.registerShortcuts(movementManager, windowPool);
+                    shortcutsService.registerShortcuts();
                 });
 
                 shortcutEditor.webContents.once('dom-ready', async () => {
@@ -408,25 +541,11 @@ function createWindows() {
     layoutManager = new WindowLayoutManager(windowPool);
 
     header.webContents.once('dom-ready', () => {
-        shortcutsService.registerShortcuts(movementManager, windowPool);
+        shortcutsService.initialize(movementManager, windowPool);
+        shortcutsService.registerShortcuts();
     });
 
     setupIpcHandlers(movementManager);
-    
-    // Content protection helper functions
-    const getContentProtectionStatus = () => isContentProtectionOn;
-    const setContentProtection = (status) => {
-        isContentProtectionOn = status;
-        console.log(`[Protection] Content protection toggled to: ${isContentProtectionOn}`);
-        windowPool.forEach(win => {
-            if (win && !win.isDestroyed()) {
-                win.setContentProtection(isContentProtectionOn);
-            }
-        });
-    };
-    
-    // Initialize windowBridge with required dependencies
-    windowBridge.initialize(windowPool, require('electron').app, require('electron').shell, getCurrentDisplay, createFeatureWindows, movementManager, getContentProtectionStatus, setContentProtection, updateLayout);
 
     if (currentHeaderState === 'main') {
         createFeatureWindows(header, ['listen', 'ask', 'settings', 'shortcut-settings']);
@@ -499,46 +618,7 @@ function setupIpcHandlers(movementManager) {
         } else {         // 'apikey' | 'permission'
             destroyFeatureWindows();
         }
-        shortcutsService.registerShortcuts(movementManager, windowPool);
-    });
-
-    ipcMain.handle('get-current-shortcuts', async () => {
-        return await shortcutsService.loadKeybinds();
-    });
-
-    ipcMain.handle('get-default-shortcuts', async () => {
-        const defaults = shortcutsService.getDefaultKeybinds();
-        await shortcutsService.saveKeybinds(defaults);
-        // Reregister shortcuts with new defaults
-        await shortcutsService.registerShortcuts(movementManager, windowPool);
-        return defaults;
-    });
-
-    ipcMain.handle('save-shortcuts', async (event, newKeybinds) => {
-        try {
-            await shortcutsService.saveKeybinds(newKeybinds);
-            
-            const editor = windowPool.get('shortcut-settings');
-            if (editor && !editor.isDestroyed()) {
-                editor.close(); // This will trigger re-registration on 'closed' event
-            } else {
-                // If editor wasn't open, re-register immediately
-                await shortcutsService.registerShortcuts(movementManager, windowPool);
-            }
-            return { success: true };
-        } catch (error) {
-            console.error("Failed to save shortcuts:", error);
-            // On failure, re-register old shortcuts to be safe
-            await shortcutsService.registerShortcuts(movementManager, windowPool);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.on('close-shortcut-editor', () => {
-        const editor = windowPool.get('shortcut-settings');
-        if (editor && !editor.isDestroyed()) {
-            editor.close();
-        }
+        internalBridge.emit('reregister-shortcuts');
     });
 
     // resize-header-window handler moved to windowBridge.js to avoid duplication
@@ -1063,6 +1143,13 @@ async function captureScreenshot(options = {}) {
     }
 }
 
+const closeWindow = (windowName) => {
+    const win = windowPool.get(windowName);
+    if (win && !win.isDestroyed()) {
+        win.close();
+    }
+};
+
 module.exports = {
     updateLayout,
     createWindows,
@@ -1073,4 +1160,14 @@ module.exports = {
     getCurrentModelInfo,
     captureScreenshot,
     toggleFeature, // Export toggleFeature so shortcutsService can use it
+    toggleContentProtection,
+    resizeHeaderWindow,
+    getContentProtectionStatus,
+    openShortcutEditor,
+    showSettingsWindow,
+    hideSettingsWindow,
+    cancelHideSettingsWindow,
+    openLoginPage,
+    moveWindowStep,
+    closeWindow,
 };
