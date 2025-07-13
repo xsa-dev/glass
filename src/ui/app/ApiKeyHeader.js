@@ -331,14 +331,15 @@ export class ApiKeyHeader extends LitElement {
     this.ipcTimeout = 10000; // 10s for IPC calls
     this.operationTimeout = 15000; // 15s for complex operations
     
-    // Health monitoring system
+    // Health monitoring system 
     this.healthCheck = {
       enabled: false,
       intervalId: null,
-      intervalMs: 30000, // 30s
+      intervalMs: 120000,
       lastCheck: 0,
       consecutiveFailures: 0,
-      maxFailures: 3
+      maxFailures: 5, 
+      skipDuringOperation: true // skip during operation
     };
     
     // Load user model history from localStorage
@@ -639,6 +640,17 @@ export class ApiKeyHeader extends LitElement {
   async _performHealthCheck() {
     // Only perform health check if Ollama is selected and we're in a stable state
     if (this.llmProvider !== 'ollama' || this.connectionState === 'connecting') {
+      return;
+    }
+      
+    // skip during operation
+    if (this.healthCheck.skipDuringOperation && (
+      this.operationQueue.length > 0 || 
+      this.connectionState === 'installing' ||
+      this.connectionState === 'starting' ||
+      Object.keys(this.operationMetrics.activeOperations || {}).length > 0
+    )) {
+      console.log('[ApiKeyHeader] Skipping health check - other operations in progress');
       return;
     }
     

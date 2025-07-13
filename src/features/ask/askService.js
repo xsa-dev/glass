@@ -138,6 +138,8 @@ class AskService {
         console.log('[AskService] Service instance created.');
     }
 
+
+
     _broadcastState() {
         const askWindow = getWindowPool()?.get('ask');
         if (askWindow && !askWindow.isDestroyed()) {
@@ -381,6 +383,7 @@ class AskService {
                                 this._broadcastState();
                             }
                         } catch (error) {
+                            console.error('[AskService] Failed to parse stream data:', { line: data, error: error.message });
                         }
                     }
                 }

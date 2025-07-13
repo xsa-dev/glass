@@ -1,6 +1,7 @@
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const { EventEmitter } = require('events');
+const { BrowserWindow } = require('electron');
 const path = require('path');
 const os = require('os');
 const https = require('https');
@@ -15,6 +16,19 @@ class LocalAIServiceBase extends EventEmitter {
         this.serviceName = serviceName;
         this.baseUrl = null;
         this.installationProgress = new Map();
+    }
+
+    // 모든 윈도우에 이벤트 브로드캐스트
+    _broadcastToAllWindows(eventName, data = null) {
+        BrowserWindow.getAllWindows().forEach(win => {
+            if (win && !win.isDestroyed()) {
+                if (data !== null) {
+                    win.webContents.send(eventName, data);
+                } else {
+                    win.webContents.send(eventName);
+                }
+            }
+        });
     }
 
     getPlatform() {
@@ -65,7 +79,7 @@ class LocalAIServiceBase extends EventEmitter {
 
     setInstallProgress(modelName, progress) {
         this.installationProgress.set(modelName, progress);
-        this.emit('install-progress', { model: modelName, progress });
+        // 각 서비스에서 직접 브로드캐스트하도록 변경
     }
 
     clearInstallProgress(modelName) {
@@ -194,15 +208,7 @@ class LocalAIServiceBase extends EventEmitter {
                     if (totalSize > 0) {
                         const progress = Math.round((downloadedSize / totalSize) * 100);
                         
-                        // 이벤트 기반 진행률 보고
-                        if (modelId) {
-                            this.emit('download-progress', { 
-                                modelId, 
-                                progress, 
-                                downloadedSize, 
-                                totalSize 
-                            });
-                        }
+                        // 이벤트 기반 진행률 보고는 각 서비스에서 직접 처리
                         
                         // 기존 콜백 지원 (호환성 유지)
                         if (onProgress) {
@@ -215,7 +221,7 @@ class LocalAIServiceBase extends EventEmitter {
 
                 file.on('finish', () => {
                     file.close(() => {
-                        this.emit('download-complete', { url, destination, size: downloadedSize, modelId });
+                        // download-complete 이벤트는 각 서비스에서 직접 처리
                         resolve({ success: true, size: downloadedSize });
                     });
                 });
@@ -272,12 +278,7 @@ class LocalAIServiceBase extends EventEmitter {
                 return result;
             } catch (error) {
                 if (attempt === maxRetries) {
-                    this.emit('download-error', { 
-                        url, 
-                        error: error.message, 
-                        modelId,
-                        attempt: attempt
-                    });
+                    // download-error 이벤트는 각 서비스에서 직접 처리
                     throw error;
                 }
                 
@@ -285,23 +286,6 @@ class LocalAIServiceBase extends EventEmitter {
                 await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
             }
         }
-    }
-
-    // 모델 pull을 위한 이벤트 발생 메서드 추가
-    emitPullProgress(modelId, progress, status = 'pulling') {
-        this.emit('pull-progress', { 
-            modelId, 
-            progress, 
-            status 
-        });
-    }
-
-    emitPullComplete(modelId) {
-        this.emit('pull-complete', { modelId });
-    }
-
-    emitPullError(modelId, error) {
-        this.emit('pull-error', { modelId, error });
     }
 
     async verifyChecksum(filePath, expectedChecksum) {

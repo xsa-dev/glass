@@ -1,6 +1,7 @@
 const Store = require('electron-store');
 const fetch = require('node-fetch');
 const { EventEmitter } = require('events');
+const { BrowserWindow } = require('electron');
 const { PROVIDERS, getProviderClass } = require('../ai/factory');
 const encryptionService = require('./encryptionService');
 const providerSettingsRepository = require('../repositories/providerSettings');
@@ -20,6 +21,19 @@ class ModelStateService extends EventEmitter {
         // Set auth service for repositories
         providerSettingsRepository.setAuthService(authService);
         userModelSelectionsRepository.setAuthService(authService);
+    }
+
+    // 모든 윈도우에 이벤트 브로드캐스트
+    _broadcastToAllWindows(eventName, data = null) {
+        BrowserWindow.getAllWindows().forEach(win => {
+            if (win && !win.isDestroyed()) {
+                if (data !== null) {
+                    win.webContents.send(eventName, data);
+                } else {
+                    win.webContents.send(eventName);
+                }
+            }
+        });
     }
 
     async initialize() {
@@ -352,8 +366,8 @@ class ModelStateService extends EventEmitter {
         
         this._autoSelectAvailableModels([]);
         
-        this.emit('state-changed', this.state);
-        this.emit('settings-updated');
+        this._broadcastToAllWindows('model-state:updated', this.state);
+        this._broadcastToAllWindows('settings-updated');
     }
 
     getApiKey(provider) {
@@ -372,8 +386,8 @@ class ModelStateService extends EventEmitter {
             
             this._autoSelectAvailableModels([]);
             
-            this.emit('state-changed', this.state);
-            this.emit('settings-updated');
+            this._broadcastToAllWindows('model-state:updated', this.state);
+            this._broadcastToAllWindows('settings-updated');
             return true;
         }
         return false;
@@ -516,8 +530,8 @@ class ModelStateService extends EventEmitter {
             this._autoWarmUpOllamaModel(modelId, previousModelId);
         }
         
-        this.emit('state-changed', this.state);
-        this.emit('settings-updated');
+        this._broadcastToAllWindows('model-state:updated', this.state);
+        this._broadcastToAllWindows('settings-updated');
         return true;
     }
 
@@ -529,7 +543,7 @@ class ModelStateService extends EventEmitter {
      */
     async _autoWarmUpOllamaModel(newModelId, previousModelId) {
         try {
-            console.log(`[ModelStateService] 🔥 LLM model changed: ${previousModelId || 'None'} → ${newModelId}, triggering warm-up`);
+            console.log(`[ModelStateService] LLM model changed: ${previousModelId || 'None'} → ${newModelId}, triggering warm-up`);
             
             // Get Ollama service if available
             const ollamaService = require('./ollamaService');
@@ -545,12 +559,12 @@ class ModelStateService extends EventEmitter {
                     const success = await ollamaService.warmUpModel(newModelId);
                     
                     if (success) {
-                        console.log(`[ModelStateService] ✅ Successfully warmed up model: ${newModelId}`);
+                        console.log(`[ModelStateService] Successfully warmed up model: ${newModelId}`);
                     } else {
-                        console.log(`[ModelStateService] ⚠️ Failed to warm up model: ${newModelId}`);
+                        console.log(`[ModelStateService] Failed to warm up model: ${newModelId}`);
                     }
                 } catch (error) {
-                    console.log(`[ModelStateService] 🚫 Error during auto warm-up for ${newModelId}:`, error.message);
+                    console.log(`[ModelStateService] Error during auto warm-up for ${newModelId}:`, error.message);
                 }
             }, 500); // 500ms delay
             
@@ -584,7 +598,7 @@ class ModelStateService extends EventEmitter {
         if (success) {
             const selectedModels = this.getSelectedModels();
             if (!selectedModels.llm || !selectedModels.stt) {
-                this.emit('force-show-apikey-header');
+                this._broadcastToAllWindows('force-show-apikey-header');
             }
         }
         return success;

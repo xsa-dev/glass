@@ -322,6 +322,12 @@ function createFeatureWindows(header, namesToCreate) {
                 if (!app.isPackaged) {
                     ask.webContents.openDevTools({ mode: 'detach' });
                 }
+                
+                ask.on('closed', () => {
+                    console.log('[WindowManager] Ask window closed, removing from pool.');
+                    windowPool.delete('ask');
+                });
+                
                 windowPool.set('ask', ask);
                 break;
             }

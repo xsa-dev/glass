@@ -3,7 +3,7 @@ const { promisify } = require('util');
 const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs').promises;
-const { app } = require('electron');
+const { app, BrowserWindow } = require('electron');
 const LocalAIServiceBase = require('./localAIServiceBase');
 const { spawnAsync } = require('../utils/spawnHelper');
 const { DOWNLOAD_CHECKSUMS } = require('../config/checksums');
@@ -27,8 +27,8 @@ class OllamaService extends LocalAIServiceBase {
         };
         
         // Configuration
-        this.requestTimeout = 8000; // 8s for health checks
-        this.warmupTimeout = 60000; // 60s for model warmup (늘림)
+        this.requestTimeout = 0; // Delete timeout
+        this.warmupTimeout = 120000; // 120s for model warmup
         this.healthCheckInterval = 60000; // 1min between health checks
         this.circuitBreakerThreshold = 3;
         this.circuitBreakerCooldown = 30000; // 30s
@@ -38,6 +38,19 @@ class OllamaService extends LocalAIServiceBase {
         
         // Start health monitoring
         this._startHealthMonitoring();
+    }
+
+    // 모든 윈도우에 이벤트 브로드캐스트
+    _broadcastToAllWindows(eventName, data = null) {
+        BrowserWindow.getAllWindows().forEach(win => {
+            if (win && !win.isDestroyed()) {
+                if (data !== null) {
+                    win.webContents.send(eventName, data);
+                } else {
+                    win.webContents.send(eventName);
+                }
+            }
+        });
     }
 
     async getStatus() {
@@ -87,14 +100,17 @@ class OllamaService extends LocalAIServiceBase {
         const controller = new AbortController();
         const timeout = options.timeout || this.requestTimeout;
         
-        // Set up timeout mechanism
-        const timeoutId = setTimeout(() => {
-            controller.abort();
-            this.activeRequests.delete(requestId);
-            this._recordFailure();
-        }, timeout);
-        
-        this.requestTimeouts.set(requestId, timeoutId);
+        // Set up timeout mechanism only if timeout > 0
+        let timeoutId = null;
+        if (timeout > 0) {
+            timeoutId = setTimeout(() => {
+                controller.abort();
+                this.activeRequests.delete(requestId);
+                this._recordFailure();
+            }, timeout);
+            
+            this.requestTimeouts.set(requestId, timeoutId);
+        }
         
         const requestPromise = this._executeRequest(url, {
             ...options,
@@ -115,8 +131,10 @@ class OllamaService extends LocalAIServiceBase {
             }
             throw error;
         } finally {
-            clearTimeout(timeoutId);
-            this.requestTimeouts.delete(requestId);
+            if (timeoutId !== null) {
+                clearTimeout(timeoutId);
+                this.requestTimeouts.delete(requestId);
+            }
             this.activeRequests.delete(operationType === 'health' ? 'health' : requestId);
         }
     }
@@ -377,7 +395,7 @@ class OllamaService extends LocalAIServiceBase {
                             
                             if (progress !== null) {
                                 this.setInstallProgress(modelName, progress);
-                                this.emit('pull-progress', { 
+                                this._broadcastToAllWindows('ollama:pull-progress', { 
                                     model: modelName, 
                                     progress,
                                     status: data.status || 'downloading'
@@ -388,7 +406,7 @@ class OllamaService extends LocalAIServiceBase {
                             // Handle completion
                             if (data.status === 'success') {
                                 console.log(`[OllamaService] Successfully pulled model: ${modelName}`);
-                                this.emit('pull-complete', { model: modelName });
+                                this._broadcastToAllWindows('ollama:pull-complete', { model: modelName });
                                 this.clearInstallProgress(modelName);
                                 resolve();
                                 return;
@@ -406,7 +424,7 @@ class OllamaService extends LocalAIServiceBase {
                             const data = JSON.parse(buffer);
                             if (data.status === 'success') {
                                 console.log(`[OllamaService] Successfully pulled model: ${modelName}`);
-                                this.emit('pull-complete', { model: modelName });
+                                this._broadcastToAllWindows('ollama:pull-complete', { model: modelName });
                             }
                         } catch (parseError) {
                             console.warn('[OllamaService] Failed to parse final buffer:', buffer);
@@ -881,7 +899,7 @@ class OllamaService extends LocalAIServiceBase {
     async handleInstall() {
         try {
             const onProgress = (data) => {
-                this.emit('install-progress', data);
+                this._broadcastToAllWindows('ollama:install-progress', data);
             };
 
             await this.autoInstall(onProgress);
@@ -891,11 +909,11 @@ class OllamaService extends LocalAIServiceBase {
                 await this.startService();
                 onProgress({ stage: 'starting', message: 'Ollama service started.', progress: 100 });
             }
-            this.emit('install-complete', { success: true });
+            this._broadcastToAllWindows('ollama:install-complete', { success: true });
             return { success: true };
         } catch (error) {
             console.error('[OllamaService] Failed to install:', error);
-            this.emit('install-complete', { success: false, error: error.message });
+            this._broadcastToAllWindows('ollama:install-complete', { success: false, error: error.message });
             return { success: false, error: error.message };
         }
     }
@@ -963,7 +981,7 @@ class OllamaService extends LocalAIServiceBase {
         } catch (error) {
             console.error('[OllamaService] Failed to pull model:', error);
             await ollamaModelRepository.updateInstallStatus(modelName, false, false);
-            this.emit('pull-error', { model: modelName, error: error.message });
+            this._broadcastToAllWindows('ollama:pull-error', { model: modelName, error: error.message });
             return { success: false, error: error.message };
         }
     }

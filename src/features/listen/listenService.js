@@ -39,11 +39,12 @@ class ListenService {
     }
 
     sendToRenderer(channel, data) {
-        BrowserWindow.getAllWindows().forEach(win => {
-            if (!win.isDestroyed()) {
-                win.webContents.send(channel, data);
-            }
-        });
+        const { windowPool } = require('../../window/windowManager');
+        const listenWindow = windowPool?.get('listen');
+        
+        if (listenWindow && !listenWindow.isDestroyed()) {
+            listenWindow.webContents.send(channel, data);
+        }
     }
 
     initialize() {
