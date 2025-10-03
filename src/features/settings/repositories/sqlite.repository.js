@@ -105,12 +105,12 @@ function getAutoUpdate(uid) {
             const now = Math.floor(Date.now() / 1000);
             const stmt = db.prepare(
                 'INSERT OR REPLACE INTO users (uid, display_name, email, created_at, auto_update_enabled) VALUES (?, ?, ?, ?, ?)');
-            stmt.run(targetUid, 'User', 'user@example.com', now, 1);
-            return true; // default to enabled
+            stmt.run(targetUid, 'User', 'user@example.com', now, 0);
+            return false; // default to disabled
         }
     } catch (error) {
         console.error('SQLite: Error getting auto_update_enabled setting:', error);
-        return true; // fallback to enabled
+        return false; // fallback to disabled
     }
 }
 

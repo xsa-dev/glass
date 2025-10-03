@@ -535,7 +535,7 @@ export class SettingsView extends LitElement {
         this.whisperModels = [];
         this.whisperProgressTracker = null; // Will be initialized when needed
         this.handleUsePicklesKey = this.handleUsePicklesKey.bind(this)
-        this.autoUpdateEnabled = true;
+        this.autoUpdateEnabled = false;
         this.autoUpdateLoading = true;
         this.loadInitialData();
         //////// after_modelStateService ////////
@@ -550,7 +550,7 @@ export class SettingsView extends LitElement {
             console.log('Auto-update setting loaded:', enabled);
         } catch (e) {
             console.error('Error loading auto-update setting:', e);
-            this.autoUpdateEnabled = true; // fallback
+            this.autoUpdateEnabled = false; // fallback
         }
         this.autoUpdateLoading = false;
         this.requestUpdate();

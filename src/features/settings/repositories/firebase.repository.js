@@ -108,15 +108,15 @@ async function getAutoUpdate(uid) {
                 return !!data.auto_update_enabled;
             } else {
                 // Field does not exist, just return default
-                return true;
+                return false;
             }
         } else {
             // User doc does not exist, just return default
-            return true;
+            return false;
         }
     } catch (error) {
         console.error('Firebase: Error getting auto_update_enabled setting:', error);
-        return true; // fallback to enabled
+        return false; // fallback to disabled
     }
 }
 

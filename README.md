@@ -43,11 +43,18 @@ node --version
 # curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
 # nvm install 20
 # nvm use 20
+
+# Or simply use the .nvmrc file (recommended):
+nvm use
 ```
 
 ### Installation
 
 ```bash
+# Use the correct Node.js version (automatically detected from .nvmrc)
+nvm use
+
+# Install dependencies and setup the project
 npm run setup
 ```
 

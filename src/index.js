@@ -700,6 +700,18 @@ async function initAutoUpdater() {
         return;
     }
 
+    // Check user's auto-update preference
+    try {
+        const autoUpdateEnabled = await settingsService.getAutoUpdateSetting();
+        if (!autoUpdateEnabled) {
+            console.log('Auto-updates disabled by user preference.');
+            return;
+        }
+    } catch (err) {
+        console.log('Could not check auto-update preference, defaulting to disabled:', err.message);
+        return;
+    }
+
     try {
         await autoUpdater.checkForUpdates();
         autoUpdater.on('update-available', () => {
